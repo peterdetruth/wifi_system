@@ -1,22 +1,28 @@
+# CodeIgniter core
 /vendor/
-/node_modules/
-/public/assets/node_modules/
-/.env
-/.idea/
-/.vscode/
-/.DS_Store
-/.sass-cache/
-/npm-debug.log
-/yarn-error.log
-/.env.*.local
-/public/assets/uploads/
-writable/cache/*
-writable/logs/*
-writable/sessions/*
-writable/uploads/*
-/composer.lock
-*.sql
-*.sqlite
-*.zip
-*.tar.gz
-/.history
+ /writable/
+ /public/uploads/
+ /public/assets/cache/
+
+# Environment & configs
+.env
+.env.*
+!.env.example
+
+# IDE & OS files
+.idea/
+.vscode/
+*.log
+.DS_Store
+Thumbs.db
+
+# Cache and temp
+*.cache
+*.tmp
+*.swp
+*.bak
+
+# Node and build
+node_modules/
+dist/
+build/
