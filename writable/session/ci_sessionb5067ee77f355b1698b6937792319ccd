@@ -1,0 +1,6 @@
+__ci_last_regenerate|i:1761502208;_ci_previous_url|s:53:"http://localhost:8080/index.php/admin/packages/create";isLoggedIn|b:1;admin_id|s:1:"1";username|s:11:"Super Admin";role|s:10:"superadmin";_ci_old_input|a:2:{s:3:"get";a:0:{}s:4:"post";a:21:{s:14:"csrf_test_name";s:32:"6fd321ddf7fd21f869db98dbd4d81e95";s:4:"name";s:4:"Blue";s:4:"type";s:7:"hotspot";s:15:"duration_length";s:1:"1";s:13:"duration_unit";s:5:"hours";s:5:"price";s:2:"10";s:9:"router_id";s:1:"1";s:15:"bandwidth_value";s:2:"40";s:14:"bandwidth_unit";s:4:"Mbps";s:23:"upload_burst_rate_value";s:0:"";s:22:"upload_burst_rate_unit";s:4:"Mbps";s:25:"download_burst_rate_value";s:0:"";s:24:"download_burst_rate_unit";s:4:"Mbps";s:28:"upload_burst_threshold_value";s:0:"";s:27:"upload_burst_threshold_unit";s:4:"Mbps";s:30:"download_burst_threshold_value";s:0:"";s:29:"download_burst_threshold_unit";s:4:"Mbps";s:17:"upload_burst_time";s:0:"";s:19:"download_burst_time";s:0:"";s:17:"hotspot_plan_type";s:9:"Unlimited";s:20:"hotspot_device_limit";s:1:"2";}}__ci_vars|a:2:{s:13:"_ci_old_input";s:3:"old";s:5:"error";s:3:"old";}error|s:142:"Failed to create package: Array
+(
+    [account_type] => The account_type field is required.
+    [devices] => The devices field is required.
+)
+";

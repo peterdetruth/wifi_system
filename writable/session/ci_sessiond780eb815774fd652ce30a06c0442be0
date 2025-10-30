@@ -1,0 +1,5 @@
+__ci_last_regenerate|i:1761513978;_ci_previous_url|s:52:"http://localhost:8080/index.php/admin/routers/create";isLoggedIn|b:1;admin_id|s:1:"1";username|s:11:"Super Admin";role|s:10:"superadmin";_ci_old_input|a:2:{s:3:"get";a:0:{}s:4:"post";a:3:{s:4:"name";s:11:"Main Router";s:2:"ip";s:12:"192.168.88.1";s:6:"status";s:6:"active";}}__ci_vars|a:2:{s:13:"_ci_old_input";s:3:"old";s:5:"error";s:3:"old";}error|s:89:"Failed to create router: Array
+(
+    [ip_address] => The ip_address field is required.
+)
+";

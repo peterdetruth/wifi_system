@@ -1,0 +1,36 @@
+body {
+  font-family: 'Segoe UI', sans-serif;
+  background-color: #f8f9fa;
+}
+
+#wrapper {
+  display: flex;
+  height: 100vh;
+}
+
+#sidebar-wrapper {
+  width: 250px;
+  transition: all 0.3s;
+}
+
+#wrapper.toggled #sidebar-wrapper {
+  margin-left: -250px;
+}
+
+.list-group-item {
+  border: none;
+  transition: background-color 0.2s;
+}
+
+.list-group-item:hover {
+  background-color: #495057;
+}
+
+#page-content-wrapper {
+  overflow-y: auto;
+  flex-grow: 1;
+}
+
+form {
+  margin: 0 0 3rem 0;
+}

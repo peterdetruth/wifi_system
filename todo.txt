@@ -1,0 +1,1 @@
+live system health panel” (showing router status, active PPPoE/Hotspot users, etc.) next — to make it feel like a true ISP control dashboard?

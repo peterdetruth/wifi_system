@@ -1,0 +1,6 @@
+__ci_last_regenerate|i:1761245190;_ci_previous_url|s:52:"http://localhost:8080/index.php/admin/clients/edit/7";admin_id|s:1:"1";username|s:11:"Super Admin";email|s:14:"super@wifi.com";role|s:10:"superadmin";isLoggedIn|b:1;_ci_old_input|a:2:{s:3:"get";a:0:{}s:4:"post";a:6:{s:9:"full_name";s:13:"Delete Client";s:8:"username";s:12:"DeleteClient";s:12:"account_type";s:8:"personal";s:5:"email";s:15:"delete@wifi.com";s:5:"phone";s:11:"00000000000";s:6:"status";s:6:"active";}}__ci_vars|a:2:{s:13:"_ci_old_input";s:3:"old";s:5:"error";s:3:"old";}error|s:136:"Failed to update client: Array
+(
+    [username] => That username is already taken.
+    [email] => That email address is already used.
+)
+";
