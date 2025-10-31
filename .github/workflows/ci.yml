@@ -1,0 +1,21 @@
+name: CI
+
+on:
+  push:
+    branches: [ develop, main ]
+  pull_request:
+    branches: [ develop, main ]
+
+jobs:
+  php-lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.1'
+      - name: Install Composer deps
+        run: composer install --no-progress --no-suggest --prefer-dist
+      - name: Run PHP lint
+        run: vendor/bin/phpcs --standard=PSR12 app || true

@@ -130,18 +130,20 @@ $routes->group('client', ['namespace' => 'App\Controllers\Client'], static funct
         $routes->get('vouchers/redeem', 'Vouchers::redeem');
         $routes->post('vouchers/redeem-post', 'Vouchers::redeemPost');
 
+        
+        // Transactions
+        $routes->get('transactions', 'Transactions::index');
+        $routes->get('transactions/view/(:num)', 'Transactions::view/$1');
+        
+        // Profile
+        $routes->get('profile', 'Profile::index');
+        $routes->post('profile/update', 'Profile::update');
+        
         // Payments
         $routes->get('payments', 'Payments::index');
         $routes->get('payments/checkout/(:num)', 'Payments::checkout/$1');
         $routes->post('payments/process', 'Payments::process');
         $routes->get('payments/buy/(:num)', 'Payments::buy/$1');
-
-        // Transactions
-        $routes->get('transactions', 'Transactions::index');
-        $routes->get('transactions/view/(:num)', 'Transactions::view/$1');
-
-        // Profile
-        $routes->get('profile', 'Profile::index');
-        $routes->post('profile/update', 'Profile::update');
+        $routes->get('payments/success/(:num)', 'Payments::success/$1');
     });
 });

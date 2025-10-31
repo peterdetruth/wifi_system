@@ -9,6 +9,7 @@ use App\Models\TransactionModel;
 use App\Models\MpesaTransactionModel;
 use App\Models\VoucherModel;
 use App\Models\ClientModel;
+use App\Helpers\ReceiptHelper;
 
 class Payments extends BaseController
 {
@@ -69,12 +70,12 @@ class Payments extends BaseController
         $expiryDate = $this->calculateExpiry($package['duration_length'], $package['duration_unit']);
 
         $subscriptionData = [
-            'client_id' => $clientId,
-            'package_id' => $packageId,
-            'router_id' => $package['router_id'],
-            'start_date' => date('Y-m-d H:i:s'),
-            'expires_on' => $expiryDate,
-            'status' => 'active'
+            'client_id'   => $clientId,
+            'package_id'  => $packageId,
+            'router_id'   => $package['router_id'],
+            'start_date'  => date('Y-m-d H:i:s'),
+            'expires_on'  => $expiryDate,
+            'status'      => 'active'
         ];
 
         // 🔹 Case 1: Voucher Redemption
@@ -88,7 +89,26 @@ class Payments extends BaseController
             $this->subscriptionModel->insert($subscriptionData);
             $this->voucherModel->markAsUsed($voucherCode, $clientId);
 
-            return redirect()->to('/client/subscriptions')
+            // Log transaction
+            $transactionId = $this->transactionModel->insert([
+                'client_id'      => $clientId,
+                'package_id'     => $packageId,
+                'package_type'   => $package['type'],
+                'package_length' => $package['duration_length'] . ' ' . $package['duration_unit'],
+                'amount'         => 0,
+                'method'         => 'voucher',
+                'mpesa_code'     => $voucherCode,
+                'router_id'      => $package['router_id'],
+                'status'         => 'success',
+                'created_on'     => date('Y-m-d H:i:s'),
+                'expires_on'     => $expiryDate
+            ]);
+
+            // 🔹 Generate & email receipt
+            $pdfPath = ReceiptHelper::generate($transactionId);
+            ReceiptHelper::sendEmail($clientId, $pdfPath);
+
+            return redirect()->to('/client/payments/success/' . $transactionId)
                 ->with('success', 'Voucher redeemed successfully! Subscription activated.');
         }
 
@@ -96,40 +116,70 @@ class Payments extends BaseController
         $mpesaCode = 'MP' . strtoupper(bin2hex(random_bytes(4)));
         $amount = $package['price'];
 
-        // Insert mpesa transaction
+        // Record Mpesa Transaction
         $this->mpesaTransactionModel->insert([
-            'client_id' => $clientId,
-            'client_username' => $clientUsername,
-            'package_id' => $packageId,
-            'package_length' => $package['duration_length'] . ' ' . $package['duration_unit'],
-            'amount' => $amount,
-            'transaction_id' => $mpesaCode,
-            'phone' => $phone,
-            'status' => 'Completed',
-            'created_at' => date('Y-m-d H:i:s')
+            'client_id'        => $clientId,
+            'client_username'  => $clientUsername,
+            'package_id'       => $packageId,
+            'package_length'   => $package['duration_length'] . ' ' . $package['duration_unit'],
+            'amount'           => $amount,
+            'transaction_id'   => $mpesaCode,
+            'phone'            => $phone,
+            'status'           => 'Completed',
+            'created_at'       => date('Y-m-d H:i:s')
         ]);
 
-        // Insert transaction
-        $this->transactionModel->insert([
-            'client_id' => $clientId,
-            'package_id' => $packageId,
-            'package_type' => $package['type'],
+        // Insert general transaction
+        $transactionId = $this->transactionModel->insert([
+            'client_id'      => $clientId,
+            'package_id'     => $packageId,
+            'package_type'   => $package['type'],
             'package_length' => $package['duration_length'] . ' ' . $package['duration_unit'],
-            'amount' => $amount,
-            'method' => 'mpesa',
-            'mpesa_code' => $mpesaCode,
-            'router_id' => $package['router_id'],
-            'router_status' => 'active',
-            'online_status' => 'offline',
-            'status' => 'success',
-            'created_on' => date('Y-m-d H:i:s'),
-            'expires_on' => $expiryDate
+            'amount'         => $amount,
+            'method'         => 'mpesa',
+            'mpesa_code'     => $mpesaCode,
+            'router_id'      => $package['router_id'],
+            'router_status'  => 'active',
+            'online_status'  => 'offline',
+            'status'         => 'success',
+            'created_on'     => date('Y-m-d H:i:s'),
+            'expires_on'     => $expiryDate
         ]);
 
         // Create subscription
         $this->subscriptionModel->insert($subscriptionData);
 
-        return redirect()->to('/client/subscriptions')->with('success', 'Payment successful! Subscription activated.');
+        // 🔹 Generate & email receipt
+        $pdfPath = ReceiptHelper::generate($transactionId);
+        ReceiptHelper::sendEmail($clientId, $pdfPath);
+
+        return redirect()->to('/client/payments/success/' . $transactionId)
+            ->with('success', 'Payment successful! Subscription activated.');
+    }
+
+    /**
+     * Show receipt summary after success
+     */
+    public function success($subscriptionId)
+    {
+        $clientId = session()->get('client_id');
+        if (!$clientId) return redirect()->to('/client/login');
+
+        $subscription = $this->subscriptionModel
+            ->where('id', $subscriptionId)
+            ->where('client_id', $clientId)
+            ->first();
+
+        if (!$subscription) {
+            return redirect()->to('/client/dashboard')->with('error', 'Subscription not found.');
+        }
+
+        $package = $this->packageModel->find($subscription['package_id']);
+
+        return view('client/payments/success', [
+            'subscription' => $subscription,
+            'package' => $package
+        ]);
     }
 
     /**
