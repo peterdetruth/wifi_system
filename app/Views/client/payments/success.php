@@ -10,7 +10,11 @@
       <h5 class="fw-bold"><?= esc($package['name'] ?? 'Unknown Package') ?></h5>
       <p class="mb-1">Duration: <?= esc($package['duration_length'] . ' ' . $package['duration_unit']) ?></p>
       <p class="mb-1">Amount: KES <?= number_format($package['price'], 2) ?></p>
-      <p class="mb-1">Expiry: <?= date('d M Y, H:i', strtotime($subscription['expires_on'])) ?></p>
+      <?php if (!empty($subscription['expires_on'])): ?>
+        <p class="mb-1">Expiry: <?= date('d M Y, H:i', strtotime($subscription['expires_on'])) ?></p>
+      <?php else: ?>
+        <p class="mb-1 text-muted">Expiry date will appear once your subscription is activated.</p>
+      <?php endif; ?>
     </div>
 
     <a href="<?= site_url('client/subscriptions') ?>" class="btn btn-primary">Go to My Subscriptions</a>

@@ -5,3 +5,33 @@
 <?php if (session()->getFlashdata('success')): ?>
   <p class="success"><?= session()->getFlashdata('success') ?></p>
 <?php endif; ?>
+
+<link href="<?= base_url('assets/css/bootstrap.min.css') ?>" rel="stylesheet">
+<script src="<?= base_url('assets/js/jquery-3.6.0.min.js') ?>"></script>
+
+curl -Method POST `
+  -Uri "https://inscriptionless-palpebral-lenita.ngrok-free.dev/mpesa/callback" `
+  -Headers @{ "Content-Type" = "application/json" } `
+  -Body '{"Body":{"stkCallback":{"MerchantRequestID":"12345","CheckoutRequestID":"ws_CO_31102025190221908708374149","ResultCode":0,"ResultDesc":"The service request is processed successfully.","CallbackMetadata":{"Item":[{"Name":"Amount","Value":100},{"Name":"MpesaReceiptNumber","Value":"MP123XYZ"},{"Name":"TransactionDate","Value":20251031152300},{"Name":"PhoneNumber","Value":254707381682}]}}}}'
+
+curl -X POST "https://inscriptionless-palpebral-lenita.ngrok-free.dev/mpesa/callback" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "Body": {
+      "stkCallback": {
+        "MerchantRequestID": "mrid_12345",
+        "CheckoutRequestID": "chk_67890",
+        "ResultCode": 0,
+        "ResultDesc": "Success",
+        "CallbackMetadata": {
+          "Item": [
+            {"Name": "Amount", "Value": 100},
+            {"Name": "MpesaReceiptNumber", "Value": "MPESA123XYZ"},
+            {"Name": "TransactionDate", "Value": 20251101123456},
+            {"Name": "PhoneNumber", "Value": 254707381682}
+          ]
+        }
+      }
+    }
+  }'
+

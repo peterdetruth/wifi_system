@@ -1,1 +1,3 @@
 live system health panel” (showing router status, active PPPoE/Hotspot users, etc.) next — to make it feel like a true ISP control dashboard?
+
+Save this and ensure your .env or environment contains mpesa.consumer_key, mpesa.consumer_secret, mpesa.shortcode, mpesa.passkey, mpesa.callback_url, mpesa.environment = sandbox

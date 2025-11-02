@@ -80,7 +80,10 @@ $routes->group('admin', ['filter' => 'auth', 'namespace' => 'App\Controllers'], 
         $routes->get('/', 'Transactions::index');
     });
 
-    // 📱 M-PESA Logs
+    // 📱 M-PESA Logs (NEW)
+    $routes->get('mpesa-logs', '\App\Controllers\MpesaLogs::index');
+
+    // 📞 M-PESA Logs (legacy view, optional)
     $routes->group('mpesa', static function($routes) {
         $routes->get('/', 'Mpesa::index');
     });
@@ -130,20 +133,28 @@ $routes->group('client', ['namespace' => 'App\Controllers\Client'], static funct
         $routes->get('vouchers/redeem', 'Vouchers::redeem');
         $routes->post('vouchers/redeem-post', 'Vouchers::redeemPost');
 
-        
         // Transactions
         $routes->get('transactions', 'Transactions::index');
         $routes->get('transactions/view/(:num)', 'Transactions::view/$1');
-        
+
         // Profile
         $routes->get('profile', 'Profile::index');
         $routes->post('profile/update', 'Profile::update');
-        
+
         // Payments
         $routes->get('payments', 'Payments::index');
         $routes->get('payments/checkout/(:num)', 'Payments::checkout/$1');
-        $routes->post('payments/process', 'Payments::process');
         $routes->get('payments/buy/(:num)', 'Payments::buy/$1');
         $routes->get('payments/success/(:num)', 'Payments::success/$1');
+        $routes->post('payments/process', 'Payments::process');
+        $routes->get('payments/waiting/(:num)', 'Payments::waiting/$1');
+        $routes->get('payments/pending', 'Payments::pending');
+        $routes->get('payments/initiate/(:num)', 'Payments::initiatePayment/$1');
+
+        // M-PESA callback endpoint (for client)
+        $routes->post('/mpesa/callback', 'Mpesa::callback');
     });
 });
+
+$routes->get('client/payments/check-status', 'Client\Payments::checkStatus');
+$routes->get('test/envcheck', 'Test::envcheck');

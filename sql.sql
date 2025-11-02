@@ -236,6 +236,16 @@ ALTER TABLE mpesa_transactions
     FOREIGN KEY (package_id) REFERENCES packages(id)
     ON DELETE SET NULL;
 
+-- add needed columns if not present
+ALTER TABLE mpesa_transactions
+  ADD COLUMN checkout_request_id VARCHAR(255) NULL AFTER transaction_id,
+  ADD COLUMN merchant_request_id VARCHAR(255) NULL AFTER checkout_request_id,
+  ADD COLUMN transaction_ref INT(11) NULL AFTER merchant_request_id, -- links to your transactions.id if you use it
+  ADD COLUMN status VARCHAR(50) NULL AFTER transaction_ref,
+  ADD COLUMN callback_raw LONGTEXT NULL AFTER status,
+  ADD COLUMN completed_at DATETIME NULL AFTER callback_raw;
+
+
 
 -- Subscribers view helper table (optional) - we'll infer active/expired from transactions
 -- Insert a sample superadmin (password is '123456' - hashed)
@@ -385,3 +395,23 @@ CREATE TABLE subscriptions (
   CONSTRAINT fk_sub_router FOREIGN KEY (router_id) REFERENCES routers(id) ON DELETE SET NULL
 );
 ALTER TABLE subscriptions ADD COLUMN expires_on DATETIME NOT NULL;
+
+CREATE TABLE mpesa_logs (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    raw_callback TEXT,
+    created_at DATETIME
+);
+
+CREATE TABLE `payments` (
+  `id` INT NOT NULL AUTO_INCREMENT,
+  `client_id` INT DEFAULT NULL,
+  `mpesa_receipt` VARCHAR(150) NOT NULL,
+  `phone` VARCHAR(50) DEFAULT NULL,
+  `amount` DECIMAL(10,2) NOT NULL DEFAULT 0.00,
+  `transaction_date` DATETIME DEFAULT NULL,
+  `created_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `mpesa_receipt` (`mpesa_receipt`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+
