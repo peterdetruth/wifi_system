@@ -50,7 +50,6 @@ class Mpesa extends BaseController
             $data = $this->request->getJSON(true);
             $this->mpesa_debug("🔔 Incoming callback", $data);
 
-            // Defensive check
             if (empty($data['Body']['stkCallback'])) {
                 $this->mpesa_debug("❌ Invalid callback payload (no stkCallback key).");
                 return $this->fail('Invalid callback payload');
@@ -68,7 +67,7 @@ class Mpesa extends BaseController
                 'ResultCode' => $resultCode,
             ]);
 
-            // Find pending transaction
+            // ✅ Find transaction by CheckoutRequestID
             $transaction = $this->mpesaTransactionModel
                 ->where('checkout_request_id', $checkoutRequestID)
                 ->first();
@@ -78,7 +77,7 @@ class Mpesa extends BaseController
                 return $this->respond(['ResultCode' => 1, 'ResultDesc' => 'Transaction not found'], 404);
             }
 
-            // If failed
+            // ❌ If failed
             if ($resultCode != 0) {
                 $this->mpesa_debug("❌ Payment failed for {$checkoutRequestID}: {$resultDesc}");
                 $this->mpesaTransactionModel->update($transaction['id'], [
@@ -88,7 +87,7 @@ class Mpesa extends BaseController
                 return $this->respond(['ResultCode' => 0, 'ResultDesc' => 'Acknowledged failure'], 200);
             }
 
-            // If success, extract metadata
+            // ✅ If success, extract metadata
             $metadata = $callback['CallbackMetadata']['Item'] ?? [];
             $amount = $mpesaReceipt = $phone = $transactionDate = null;
 
@@ -118,18 +117,27 @@ class Mpesa extends BaseController
                 return $this->respond(['ResultCode' => 1, 'ResultDesc' => 'Missing MpesaReceiptNumber'], 400);
             }
 
-            // Update transaction status
+            // ✅ Step 1: Duplicate Protection
+            $existing = $this->paymentsModel
+                ->where('mpesa_receipt', $mpesaReceipt)
+                ->first();
+
+            if ($existing) {
+                $this->mpesa_debug("⚠️ Duplicate payment ignored for MpesaReceiptNumber: {$mpesaReceipt}");
+                return $this->respond(['ResultCode' => 0, 'ResultDesc' => 'Duplicate ignored'], 200);
+            }
+
+            // ✅ Step 2: Update transaction status
             $this->mpesaTransactionModel->update($transaction['id'], [
                 'status' => 'Success',
                 'updated_at' => date('Y-m-d H:i:s')
             ]);
-
             $this->mpesa_debug("💾 Updated transaction #{$transaction['id']} to Success");
 
             $clientId  = $transaction['client_id'];
             $packageId = $transaction['package_id'];
 
-            // Save payment
+            // ✅ Step 3: Save payment
             $this->paymentsModel->insert([
                 'client_id'        => $clientId,
                 'package_id'       => $packageId,
@@ -139,56 +147,56 @@ class Mpesa extends BaseController
                 'transaction_date' => $transactionDate,
                 'created_at'       => date('Y-m-d H:i:s'),
             ]);
-
             $this->mpesa_debug("✅ Payment saved successfully for {$mpesaReceipt}");
 
-            // STEP 3: AUTO-ACTIVATE CLIENT PACKAGE
-            if ($resultCode == 0) {
-                $this->mpesa_debug("🚀 Starting package activation for {$mpesaReceipt}");
+            // ✅ Step 4: Auto-activate package
+            $trx = $this->db->table('mpesa_transactions')
+                ->where('checkout_request_id', $checkoutRequestID)
+                ->get()
+                ->getRow();
 
-                $trx = $this->db->table('mpesa_transactions')
-                    ->where('checkout_request_id', $checkoutRequestID)
-                    ->get()
-                    ->getRow();
+            if ($trx) {
+                $clientId  = $trx->client_id;
+                $packageId = $trx->package_id;
+                $amount    = $trx->amount;
 
-                if ($trx) {
-                    $clientId  = $trx->client_id;
-                    $packageId = $trx->package_id;
-                    $amount    = $trx->amount;
+                $package = $this->db->table('packages')->where('id', $packageId)->get()->getRow();
 
-                    $package = $this->db->table('packages')->where('id', $packageId)->get()->getRow();
+                if ($package) {
+                    $duration = (int)$package->duration_length;
+                    $unit     = strtolower($package->duration_unit);
 
-                    if ($package) {
-                        $duration = (int)$package->duration_length;
-                        $unit     = strtolower($package->duration_unit);
+                    $startDate = date('Y-m-d H:i:s');
+                    $endDate   = match ($unit) {
+                        'months'  => date('Y-m-d H:i:s', strtotime("+{$duration} months")),
+                        'hours'   => date('Y-m-d H:i:s', strtotime("+{$duration} hours")),
+                        'minutes' => date('Y-m-d H:i:s', strtotime("+{$duration} minutes")),
+                        default   => date('Y-m-d H:i:s', strtotime("+{$duration} days")),
+                    };
 
-                        $startDate = date('Y-m-d H:i:s');
-                        $endDate   = match ($unit) {
-                            'months'  => date('Y-m-d H:i:s', strtotime("+{$duration} months")),
-                            'hours'   => date('Y-m-d H:i:s', strtotime("+{$duration} hours")),
-                            'minutes' => date('Y-m-d H:i:s', strtotime("+{$duration} minutes")),
-                            default   => date('Y-m-d H:i:s', strtotime("+{$duration} days")),
-                        };
+                    // Insert client package
+                    $this->db->table('client_packages')->insert([
+                        'client_id'  => $clientId,
+                        'package_id' => $packageId,
+                        'amount'     => $amount,
+                        'start_date' => $startDate,
+                        'end_date'   => $endDate,
+                        'status'     => 'active'
+                    ]);
 
-                        // Insert into client_packages
-                        $this->db->table('client_packages')->insert([
-                            'client_id'  => $clientId,
-                            'package_id' => $packageId,
-                            'amount'     => $amount,
-                            'start_date' => $startDate,
-                            'end_date'   => $endDate,
-                            'status'     => 'active'
-                        ]);
+                    // Update client to active
+                    $this->db->table('clients')->where('id', $clientId)->update(['status' => 'active']);
 
-                        // Update client to active
-                        $this->db->table('clients')->where('id', $clientId)->update(['status' => 'active']);
+                    $this->mpesa_debug("✅ Package {$package->name} activated for client #{$clientId}, valid until {$endDate}");
 
-                        $this->mpesa_debug("✅ Package {$package->name} activated for client #{$clientId}, valid until {$endDate}");
-                    } else {
-                        $this->mpesa_debug("❌ Package not found for ID: {$packageId}");
+                    // ✅ Step 5: Send SMS notification
+                    $client = $this->clientModel->find($clientId);
+                    if ($client && !empty($client['phone'])) {
+                        $smsMessage = "Dear {$client['full_name']}, your payment of KES {$amount} for {$package->name} has been received. Valid until {$endDate}. Thank you!";
+                        $this->sendSms($client['phone'], $smsMessage);
                     }
                 } else {
-                    $this->mpesa_debug("❌ No transaction found for CheckoutRequestID: {$checkoutRequestID}");
+                    $this->mpesa_debug("❌ Package not found for ID: {$packageId}");
                 }
             }
 
@@ -199,6 +207,30 @@ class Mpesa extends BaseController
             $this->mpesa_debug("🔥 Exception: " . $e->getMessage());
             return $this->failServerError($e->getMessage());
         }
+    }
+
+    /**
+     * Send SMS notification (placeholder)
+     */
+    private function sendSms($phone, $message)
+    {
+        // Example stub — replace with your actual SMS provider
+        $smsApiUrl = 'https://sms-provider.com/api/send';
+        $payload = [
+            'to'      => $phone,
+            'message' => $message,
+            'sender'  => 'WiFiSystem'
+        ];
+
+        $ch = curl_init($smsApiUrl);
+        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+        curl_setopt($ch, CURLOPT_POST, true);
+        curl_setopt($ch, CURLOPT_POSTFIELDS, http_build_query($payload));
+        $response = curl_exec($ch);
+        curl_close($ch);
+
+        $this->mpesa_debug("📩 SMS sent to {$phone}: {$message}");
+        return $response;
     }
 
     /**
