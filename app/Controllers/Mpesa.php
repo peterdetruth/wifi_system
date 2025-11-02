@@ -2,6 +2,8 @@
 
 namespace App\Controllers;
 
+use CodeIgniter\Controller;
+use CodeIgniter\Database\BaseConnection;
 use App\Models\MpesaLogsModel;
 use App\Models\MpesaTransactionModel;
 use App\Models\PaymentsModel;
@@ -15,6 +17,7 @@ class Mpesa extends BaseController
 {
     use ResponseTrait;
 
+    protected $db;
     protected $mpesaLogsModel;
     protected $mpesaTransactionModel;
     protected $paymentsModel;
@@ -25,7 +28,11 @@ class Mpesa extends BaseController
 
     public function __construct()
     {
-        $this->mpesaLogsModel       = new MpesaLogsModel();
+        // ✅ Initialize database connection
+        $this->db = \Config\Database::connect();
+
+        // ✅ Initialize models
+        $this->mpesaLogsModel        = new MpesaLogsModel();
         $this->mpesaTransactionModel = new MpesaTransactionModel();
         $this->paymentsModel         = new PaymentsModel();
         $this->transactionModel      = new TransactionModel();
@@ -41,11 +48,11 @@ class Mpesa extends BaseController
     {
         try {
             $data = $this->request->getJSON(true);
-            mpesa_debug("🔔 Incoming callback: " . json_encode($data));
+            $this->mpesa_debug("🔔 Incoming callback", $data);
 
-            // Defensive checks
+            // Defensive check
             if (empty($data['Body']['stkCallback'])) {
-                mpesa_debug("❌ Invalid callback payload (no stkCallback key).");
+                $this->mpesa_debug("❌ Invalid callback payload (no stkCallback key).");
                 return $this->fail('Invalid callback payload');
             }
 
@@ -55,7 +62,11 @@ class Mpesa extends BaseController
             $resultCode         = $callback['ResultCode'] ?? null;
             $resultDesc         = $callback['ResultDesc'] ?? null;
 
-            mpesa_debug("📬 Callback IDs — Merchant: {$merchantRequestID}, Checkout: {$checkoutRequestID}, ResultCode: {$resultCode}");
+            $this->mpesa_debug("📬 Callback IDs", [
+                'MerchantRequestID' => $merchantRequestID,
+                'CheckoutRequestID' => $checkoutRequestID,
+                'ResultCode' => $resultCode,
+            ]);
 
             // Find pending transaction
             $transaction = $this->mpesaTransactionModel
@@ -63,13 +74,13 @@ class Mpesa extends BaseController
                 ->first();
 
             if (!$transaction) {
-                mpesa_debug("⚠️ No pending transaction found for checkout ID {$checkoutRequestID}");
+                $this->mpesa_debug("⚠️ No pending transaction found for checkout ID {$checkoutRequestID}");
                 return $this->respond(['ResultCode' => 1, 'ResultDesc' => 'Transaction not found'], 404);
             }
 
             // If failed
             if ($resultCode != 0) {
-                mpesa_debug("❌ Payment failed for {$checkoutRequestID}: {$resultDesc}");
+                $this->mpesa_debug("❌ Payment failed for {$checkoutRequestID}: {$resultDesc}");
                 $this->mpesaTransactionModel->update($transaction['id'], [
                     'status' => 'Failed',
                     'updated_at' => date('Y-m-d H:i:s')
@@ -84,7 +95,7 @@ class Mpesa extends BaseController
             foreach ($metadata as $item) {
                 $name = $item['Name'];
                 $value = $item['Value'] ?? null;
-                mpesa_debug("🔸 Metadata: {$name} => {$value}");
+                $this->mpesa_debug("🔸 Metadata: {$name} => {$value}");
 
                 switch ($name) {
                     case 'Amount':
@@ -102,10 +113,8 @@ class Mpesa extends BaseController
                 }
             }
 
-            mpesa_debug("✅ Extracted — Amount: {$amount}, Receipt: {$mpesaReceipt}, Phone: {$phone}, Date: {$transactionDate}");
-
             if (empty($mpesaReceipt)) {
-                mpesa_debug("❌ Missing MpesaReceiptNumber, aborting insert.");
+                $this->mpesa_debug("❌ Missing MpesaReceiptNumber, aborting insert.");
                 return $this->respond(['ResultCode' => 1, 'ResultDesc' => 'Missing MpesaReceiptNumber'], 400);
             }
 
@@ -115,13 +124,12 @@ class Mpesa extends BaseController
                 'updated_at' => date('Y-m-d H:i:s')
             ]);
 
-            mpesa_debug("💾 Updated transaction #{$transaction['id']} to Success");
+            $this->mpesa_debug("💾 Updated transaction #{$transaction['id']} to Success");
 
-            // ✅ Fix: get client_id from $transaction instead of undefined variable
-            $clientId = $transaction['client_id'];
+            $clientId  = $transaction['client_id'];
             $packageId = $transaction['package_id'];
 
-            // Create payment record
+            // Save payment
             $this->paymentsModel->insert([
                 'client_id'        => $clientId,
                 'package_id'       => $packageId,
@@ -132,47 +140,69 @@ class Mpesa extends BaseController
                 'created_at'       => date('Y-m-d H:i:s'),
             ]);
 
-            mpesa_debug("✅ Payment saved successfully for {$mpesaReceipt}");
-            mpesa_log("✅ Payment success — {$mpesaReceipt} | {$phone} | {$amount}");
+            $this->mpesa_debug("✅ Payment saved successfully for {$mpesaReceipt}");
 
+            // STEP 3: AUTO-ACTIVATE CLIENT PACKAGE
+            if ($resultCode == 0) {
+                $this->mpesa_debug("🚀 Starting package activation for {$mpesaReceipt}");
+
+                $trx = $this->db->table('mpesa_transactions')
+                    ->where('checkout_request_id', $checkoutRequestID)
+                    ->get()
+                    ->getRow();
+
+                if ($trx) {
+                    $clientId  = $trx->client_id;
+                    $packageId = $trx->package_id;
+                    $amount    = $trx->amount;
+
+                    $package = $this->db->table('packages')->where('id', $packageId)->get()->getRow();
+
+                    if ($package) {
+                        $duration = (int)$package->duration_length;
+                        $unit     = strtolower($package->duration_unit);
+
+                        $startDate = date('Y-m-d H:i:s');
+                        $endDate   = match ($unit) {
+                            'months'  => date('Y-m-d H:i:s', strtotime("+{$duration} months")),
+                            'hours'   => date('Y-m-d H:i:s', strtotime("+{$duration} hours")),
+                            'minutes' => date('Y-m-d H:i:s', strtotime("+{$duration} minutes")),
+                            default   => date('Y-m-d H:i:s', strtotime("+{$duration} days")),
+                        };
+
+                        // Insert into client_packages
+                        $this->db->table('client_packages')->insert([
+                            'client_id'  => $clientId,
+                            'package_id' => $packageId,
+                            'amount'     => $amount,
+                            'start_date' => $startDate,
+                            'end_date'   => $endDate,
+                            'status'     => 'active'
+                        ]);
+
+                        // Update client to active
+                        $this->db->table('clients')->where('id', $clientId)->update(['status' => 'active']);
+
+                        $this->mpesa_debug("✅ Package {$package->name} activated for client #{$clientId}, valid until {$endDate}");
+                    } else {
+                        $this->mpesa_debug("❌ Package not found for ID: {$packageId}");
+                    }
+                } else {
+                    $this->mpesa_debug("❌ No transaction found for CheckoutRequestID: {$checkoutRequestID}");
+                }
+            }
+
+            $this->mpesa_debug("✅ Payment success — {$mpesaReceipt} | {$phone} | {$amount}");
             return $this->respond(['ResultCode' => 0, 'ResultDesc' => 'Callback processed successfully'], 200);
+
         } catch (\Throwable $e) {
-            mpesa_debug("🔥 Exception: " . $e->getMessage());
+            $this->mpesa_debug("🔥 Exception: " . $e->getMessage());
             return $this->failServerError($e->getMessage());
         }
     }
 
     /**
-     * 🧩 Helper to calculate expiry
-     */
-    private function calculateExpiry($length, $unit)
-    {
-        $unit = strtolower(trim($unit));
-        switch ($unit) {
-            case 'minute':
-            case 'minutes':
-                $interval = "+$length minutes";
-                break;
-            case 'hour':
-            case 'hours':
-                $interval = "+$length hours";
-                break;
-            case 'day':
-            case 'days':
-                $interval = "+$length days";
-                break;
-            case 'month':
-            case 'months':
-                $interval = "+$length months";
-                break;
-            default:
-                $interval = "+$length days";
-        }
-        return date('Y-m-d H:i:s', strtotime($interval));
-    }
-
-    /**
-     * 🧠 Debug Logger - Step-by-step visibility
+     * Debug Logger
      */
     private function mpesa_debug($label, $data = null)
     {
@@ -180,7 +210,6 @@ class Mpesa extends BaseController
         if ($data !== null) {
             $msg .= ' => ' . (is_array($data) ? json_encode($data) : $data);
         }
-
         log_message('info', $msg);
         file_put_contents(WRITEPATH . 'logs/mpesa_debug.log', $msg . PHP_EOL, FILE_APPEND);
     }
