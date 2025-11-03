@@ -237,7 +237,6 @@ class Payments extends BaseController
 
                 return redirect()->to('/client/payments/success/' . $transactionId)
                     ->with('success', 'Voucher redeemed successfully! Subscription activated.');
-
             } catch (\Exception $e) {
                 $db->transRollback();
                 mpesa_debug("❌ Voucher redemption failed: " . $e->getMessage());
@@ -398,14 +397,9 @@ class Payments extends BaseController
         ]);
     }
 
-    public function pending()
+    public function pending($checkoutRequestID)
     {
-        $clientId = session()->get('client_id');
-        if (!$clientId) return redirect()->to('/client/login');
-
-        return view('client/payments/pending', [
-            'title' => 'Payment Pending'
-        ]);
+        return view('client/payments/pending', ['checkoutRequestID' => $checkoutRequestID]);
     }
 
     public function checkStatus()
@@ -438,6 +432,22 @@ class Payments extends BaseController
 
         return $this->response->setJSON(['status' => 'pending']);
     }
+
+    public function status($checkoutRequestID)
+    {
+        $mpesaTransactionModel = new \App\Models\MpesaTransactionModel();
+
+        $transaction = $mpesaTransactionModel
+            ->where('checkout_request_id', $checkoutRequestID)
+            ->first();
+
+        if (!$transaction) {
+            return $this->response->setJSON(['status' => 'NotFound']);
+        }
+
+        return $this->response->setJSON(['status' => $transaction['status']]);
+    }
+
 
     private function calculateExpiry($length, $unit)
     {

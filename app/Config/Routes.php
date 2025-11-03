@@ -153,10 +153,15 @@ $routes->group('client', ['namespace' => 'App\Controllers\Client'], static funct
 
         // M-PESA callback endpoint (for client)
         $routes->post('/mpesa/callback', 'Mpesa::callback');
+
+        $routes->get('client/payments/status/(:segment)', 'Client\Payments::status/$1');
     });
 });
 
 $routes->get('client/payments/check-status', 'Client\Payments::checkStatus');
 $routes->get('test/envcheck', 'Test::envcheck');
 $routes->get('test-sms', 'Mpesa::testSms');
+$routes->get('client/payments/pending/(:segment)', 'Client\Payments::pending/$1');
+
+
 
