@@ -245,6 +245,10 @@ ALTER TABLE mpesa_transactions
   ADD COLUMN callback_raw LONGTEXT NULL AFTER status,
   ADD COLUMN completed_at DATETIME NULL AFTER callback_raw;
 
+ALTER TABLE mpesa_transactions
+ADD COLUMN updated_at DATETIME NULL AFTER created_at;
+
+
 
 
 -- Subscribers view helper table (optional) - we'll infer active/expired from transactions
@@ -413,5 +417,23 @@ CREATE TABLE `payments` (
   PRIMARY KEY (`id`),
   UNIQUE KEY `mpesa_receipt` (`mpesa_receipt`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+-- If you want to make it more forgiving during testing, you can temporarily relax the unique constraint:
+-- (You can re-add it later when your callback flow is stable.)
+ALTER TABLE payments DROP INDEX mpesa_receipt;
+
+CREATE TABLE client_packages (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    client_id INT NOT NULL,
+    package_id INT NOT NULL,
+    amount DECIMAL(10,2) NOT NULL,
+    start_date DATETIME NOT NULL,
+    end_date DATETIME NOT NULL,
+    status ENUM('active','expired','pending') DEFAULT 'active',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    FOREIGN KEY (client_id) REFERENCES clients(id),
+    FOREIGN KEY (package_id) REFERENCES packages(id)
+);
 
 

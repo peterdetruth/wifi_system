@@ -149,132 +149,158 @@ class Payments extends BaseController
      */
     public function process()
     {
-        helper('mpesa_logger');
-        mpesa_log("=== New M-PESA Payment Process Started ===");
+        helper(['mpesa_logger', 'mpesa_debug']);
+        mpesa_debug_clear();
+        mpesa_debug("=== New Payment Process Started ===");
+        mpesa_log("=== New Payment Process Started ===");
 
         $clientId = session()->get('client_id');
         if (!$clientId) return redirect()->to('/client/login');
 
-        $packageId = $this->request->getPost('package_id');
+        $packageId   = $this->request->getPost('package_id');
         $voucherCode = trim($this->request->getPost('voucher_code'));
-        $phone = trim($this->request->getPost('phone'));
+        $phone       = trim($this->request->getPost('phone'));
 
         $package = $this->packageModel->find($packageId);
-        if (!$package) return redirect()->to('/client/packages')->with('error', 'Package not found.');
+        if (!$package) {
+            mpesa_debug("❌ Package not found: {$packageId}");
+            mpesa_log("❌ Package not found: {$packageId}");
+            return redirect()->to('/client/packages')->with('error', 'Package not found.');
+        }
 
         $client = $this->clientModel->find($clientId);
         $clientUsername = $client['username'] ?? 'Unknown';
         $phone = $phone ?: ($client['phone'] ?? '');
-
         $expiryDate = $this->calculateExpiry($package['duration_length'], $package['duration_unit']);
 
         $subscriptionData = [
-            'client_id'   => $clientId,
-            'package_id'  => $packageId,
-            'router_id'   => $package['router_id'],
-            'start_date'  => date('Y-m-d H:i:s'),
-            'expires_on'  => $expiryDate,
-            'status'      => 'active'
+            'client_id'  => $clientId,
+            'package_id' => $packageId,
+            'router_id'  => $package['router_id'],
+            'start_date' => date('Y-m-d H:i:s'),
+            'expires_on' => $expiryDate,
+            'status'     => 'active'
         ];
 
         /**
-         * 🔹 CASE 1: Voucher Redemption
+         * 🔹 CASE 1: Voucher Redemption (No M-PESA)
          */
         if (!empty($voucherCode)) {
-            $voucher = $this->voucherModel->isValidVoucher($voucherCode);
+            mpesa_debug("Voucher detected — checking validity ({$voucherCode})");
+            mpesa_log("Voucher detected — checking validity ({$voucherCode})");
 
+            $voucher = $this->voucherModel->isValidVoucher($voucherCode);
             if (!$voucher) {
-                mpesa_log("❌ Voucher failed: Invalid or expired code.");
+                mpesa_debug("❌ Invalid or expired voucher: {$voucherCode}");
+                mpesa_log("❌ Invalid or expired voucher: {$voucherCode}");
                 return redirect()->back()->withInput()->with('error', 'Invalid or expired voucher code.');
             }
 
-            $this->subscriptionModel->insert($subscriptionData);
-            $this->voucherModel->markAsUsed($voucherCode, $clientId);
+            $db = \Config\Database::connect();
+            $db->transStart();
 
-            $transactionId = $this->transactionModel->insert([
-                'client_id'      => $clientId,
-                'package_id'     => $packageId,
-                'package_type'   => $package['type'],
-                'package_length' => $package['duration_length'] . ' ' . $package['duration_unit'],
-                'amount'         => 0,
-                'method'         => 'voucher',
-                'mpesa_code'     => $voucherCode,
-                'router_id'      => $package['router_id'],
-                'status'         => 'success',
-                'created_on'     => date('Y-m-d H:i:s'),
-                'expires_on'     => $expiryDate
-            ]);
+            try {
+                // 1️⃣ Create subscription
+                if (!$this->subscriptionModel->insert($subscriptionData)) {
+                    throw new \Exception('Failed to create subscription: ' . json_encode($this->subscriptionModel->errors()));
+                }
 
-            mpesa_log("✅ Voucher redeemed successfully for client {$clientUsername}.");
+                // 2️⃣ Mark voucher as used
+                $this->voucherModel->markAsUsed($voucherCode, $clientId);
 
-            $pdfPath = ReceiptHelper::generate($transactionId);
-            ReceiptHelper::sendEmail($clientId, $pdfPath);
+                // 3️⃣ Record transaction (voucher)
+                $transactionId = $this->transactionModel->insert([
+                    'client_id'      => $clientId,
+                    'package_id'     => $packageId,
+                    'package_type'   => $package['type'],
+                    'package_length' => $package['duration_length'] . ' ' . $package['duration_unit'],
+                    'amount'         => 0,
+                    'method'         => 'voucher',
+                    'mpesa_code'     => $voucherCode,
+                    'router_id'      => $package['router_id'],
+                    'status'         => 'success',
+                    'created_on'     => date('Y-m-d H:i:s'),
+                    'expires_on'     => $expiryDate
+                ]);
 
-            return redirect()->to('/client/payments/success/' . $transactionId)
-                ->with('success', 'Voucher redeemed successfully! Subscription activated.');
+                $db->transComplete();
+                if ($db->transStatus() === false) {
+                    throw new \Exception('Database commit failed during voucher redemption.');
+                }
+
+                // 4️⃣ Generate & email receipt
+                $pdfPath = ReceiptHelper::generate($transactionId);
+                ReceiptHelper::sendEmail($clientId, $pdfPath);
+
+                mpesa_debug("✅ Voucher successfully redeemed. Subscription activated for {$clientUsername}.");
+                mpesa_log("✅ Voucher successfully redeemed. Subscription activated for {$clientUsername}.");
+
+                return redirect()->to('/client/payments/success/' . $transactionId)
+                    ->with('success', 'Voucher redeemed successfully! Subscription activated.');
+
+            } catch (\Exception $e) {
+                $db->transRollback();
+                mpesa_debug("❌ Voucher redemption failed: " . $e->getMessage());
+                mpesa_log("❌ Voucher redemption failed: " . $e->getMessage());
+                return redirect()->back()->with('error', 'Voucher redemption failed: ' . $e->getMessage());
+            }
         }
 
         /**
-         * 🔹 CASE 2: M-PESA PAYMENT FLOW
+         * 🔹 CASE 2: M-PESA Payment Flow
          */
         $amount = (int) $package['price'];
-
-        // Step 1: Validate amount
         if ($amount <= 0) {
-            mpesa_log("❌ Step 1 Failed: Invalid payment amount.");
+            mpesa_debug("❌ Invalid amount: {$amount}");
+            mpesa_log("❌ Invalid amount: {$amount}");
             return redirect()->back()->with('error', 'Invalid payment amount.');
         }
 
-        log_message('debug', 'M-PESA ENV CHECK: ' . json_encode([
-            'key' => getenv('mpesa.consumer_key'),
-            'secret' => getenv('mpesa.consumer_secret'),
-            'shortcode' => getenv('mpesa.shortcode'),
-            'env' => getenv('mpesa.environment')
-        ]));
-
-        // Step 2: Build config
+        // Step 1: Build config
         $mpesaConfig = [
-            'consumer_key'    => getenv('MPESA_CONSUMER_KEY'),
-            'consumer_secret' => getenv('MPESA_CONSUMER_SECRET'),
-            'shortcode'       => getenv('MPESA_SHORTCODE') ?: '174379',
-            'passkey'         => getenv('MPESA_PASSKEY'),
-            'callback_url'    => getenv('MPESA_CALLBACK_URL') ?: base_url('mpesa/callback'),
-            'environment'     => getenv('MPESA_ENVIRONMENT') ?: 'sandbox'
+            'consumer_key'    => getenv('MPESA_CONSUMER_KEY') ?: getenv('mpesa.consumer_key'),
+            'consumer_secret' => getenv('MPESA_CONSUMER_SECRET') ?: getenv('mpesa.consumer_secret'),
+            'shortcode'       => getenv('MPESA_SHORTCODE') ?: getenv('mpesa.shortcode') ?: '174379',
+            'passkey'         => getenv('MPESA_PASSKEY') ?: getenv('mpesa.passkey'),
+            'callback_url'    => getenv('MPESA_CALLBACK_URL') ?: getenv('mpesa.callback_url') ?: base_url('mpesa/callback'),
+            'environment'     => getenv('MPESA_ENVIRONMENT') ?: getenv('mpesa.environment') ?: 'sandbox'
         ];
 
-        // Step 3: Obtain Access Token
-        mpesa_log("Step 3: Requesting M-PESA access token...");
+        mpesa_debug("Step 1: Configuration loaded for environment: {$mpesaConfig['environment']}");
+        mpesa_log("Step 1: Configuration loaded for environment: {$mpesaConfig['environment']}");
+
+        // Step 2: Obtain access token
         $credentials = base64_encode($mpesaConfig['consumer_key'] . ':' . $mpesaConfig['consumer_secret']);
-        $tokenUrl = 'https://' . ($mpesaConfig['environment'] === 'production' ? 'api' : 'sandbox') . '.safaricom.co.ke/oauth/v1/generate?grant_type=client_credentials';
+        $tokenUrl = 'https://' . ($mpesaConfig['environment'] === 'production' ? 'api' : 'sandbox')
+            . '.safaricom.co.ke/oauth/v1/generate?grant_type=client_credentials';
 
         $ch = curl_init($tokenUrl);
         curl_setopt($ch, CURLOPT_HTTPHEADER, ["Authorization: Basic $credentials"]);
         curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
         $response = curl_exec($ch);
-        if ($response === false) {
-            $error = curl_error($ch);
-            curl_close($ch);
-            mpesa_log("❌ CURL ERROR during token request: $error");
-            return redirect()->back()->with('error', 'M-PESA connection error: ' . $error);
-        }
+        $curlError = curl_error($ch);
         curl_close($ch);
 
-        $decoded = json_decode($response, true);
-        if (isset($decoded['access_token'])) {
-            $accessToken = $decoded['access_token'];
-            mpesa_log("✅ Token obtained successfully.");
-        } else {
-            mpesa_log("❌ Invalid token response: " . $response);
-            return redirect()->back()->with('error', 'M-PESA token not received. Response: ' . $response);
+        if ($curlError) {
+            mpesa_debug("❌ Token request CURL error: {$curlError}");
+            mpesa_log("❌ Token request CURL error: {$curlError}");
+            return redirect()->back()->with('error', 'M-PESA connection error: ' . $curlError);
         }
 
-        mpesa_log("✅ Step 3 Success: Access token received.");
+        $decoded = json_decode($response, true);
+        if (!isset($decoded['access_token'])) {
+            mpesa_debug("❌ Access token not received: {$response}");
+            mpesa_log("❌ Access token not received: {$response}");
+            return redirect()->back()->with('error', 'Failed to obtain M-PESA token.');
+        }
 
-        // Step 4: Prepare STK Push data
-        mpesa_log("Step 4: Preparing STK push request for amount {$amount} to {$phone}...");
+        $accessToken = $decoded['access_token'];
+        mpesa_debug("✅ Step 2: Access token received.");
+        mpesa_log("✅ Step 2: Access token received.");
+
+        // Step 3: Build STK Push payload
         $timestamp = date('YmdHis');
-        $password  = base64_encode($mpesaConfig['shortcode'] . $mpesaConfig['passkey'] . $timestamp);
-
+        $password = base64_encode($mpesaConfig['shortcode'] . $mpesaConfig['passkey'] . $timestamp);
         $stkData = [
             'BusinessShortCode' => $mpesaConfig['shortcode'],
             'Password'          => $password,
@@ -289,9 +315,12 @@ class Payments extends BaseController
             'TransactionDesc'   => 'Subscription Payment'
         ];
 
-        // Step 5: Send STK Push
-        mpesa_log("Step 5: Sending STK Push to M-PESA API...");
-        $stkUrl = 'https://' . ($mpesaConfig['environment'] === 'production' ? 'api' : 'sandbox') . '.safaricom.co.ke/mpesa/stkpush/v1/processrequest';
+        mpesa_debug("Step 3: Sending STK Push for {$phone}, amount={$amount}");
+        mpesa_log("Step 3: Sending STK Push for {$phone}, amount={$amount}");
+
+        $stkUrl = 'https://' . ($mpesaConfig['environment'] === 'production' ? 'api' : 'sandbox')
+            . '.safaricom.co.ke/mpesa/stkpush/v1/processrequest';
+
         $ch = curl_init($stkUrl);
         curl_setopt($ch, CURLOPT_HTTPHEADER, [
             "Content-Type: application/json",
@@ -305,44 +334,41 @@ class Payments extends BaseController
         curl_close($ch);
 
         if ($stkError) {
-            mpesa_log("❌ Step 5 Failed: CURL Error => $stkError");
-            return redirect()->back()->with('error', 'Step 3 Failed: STK Push request error (' . $stkError . ').');
+            mpesa_debug("❌ STK CURL error: {$stkError}");
+            mpesa_log("❌ STK CURL error: {$stkError}");
+            return redirect()->back()->with('error', 'STK Push request failed (' . $stkError . ').');
         }
 
-        mpesa_log("Raw STK Response: " . $stkResponse);
         $stkResult = json_decode($stkResponse, true);
+        mpesa_debug("Raw STK Response: " . $stkResponse);
+        mpesa_log("Raw STK Response: " . $stkResponse);
 
-        // Step 6: Validate STK Response
-        if (!isset($stkResult['ResponseCode'])) {
-            mpesa_log("❌ Step 6 Failed: No ResponseCode in STK response.");
-            return redirect()->back()->with('error', 'Step 4 Failed: No valid response from M-PESA.');
+        if (!isset($stkResult['ResponseCode']) || $stkResult['ResponseCode'] != '0') {
+            $msg = $stkResult['errorMessage'] ?? 'Unknown STK error.';
+            mpesa_debug("❌ STK Push rejected: {$msg}");
+            mpesa_log("❌ STK Push rejected: {$msg}");
+            return redirect()->back()->with('error', 'STK Push rejected: ' . $msg);
         }
 
-        if ($stkResult['ResponseCode'] != '0') {
-            mpesa_log("❌ Step 6 Failed: STK Error => " . ($stkResult['errorMessage'] ?? 'Unknown error.'));
-            return redirect()->back()->with('error', 'Step 5 Failed: ' . ($stkResult['errorMessage'] ?? 'Unknown STK error.'));
-        }
-
-        mpesa_log("✅ Step 6 Success: STK push accepted. MerchantRequestID={$stkResult['MerchantRequestID']} CheckoutRequestID={$stkResult['CheckoutRequestID']}");
-
-        // Step 7: Save pending transaction
+        // Step 4: Save pending M-PESA transaction
         $this->mpesaTransactionModel->insert([
-            'client_id'        => $clientId,
-            'client_username'  => $clientUsername,
-            'package_id'       => $packageId,
-            'package_length'   => $package['duration_length'] . ' ' . $package['duration_unit'],
-            'amount'           => $amount,
-            'phone'            => $phone,
+            'client_id'           => $clientId,
+            'client_username'     => $clientUsername,
+            'package_id'          => $packageId,
+            'package_length'      => $package['duration_length'] . ' ' . $package['duration_unit'],
+            'amount'              => $amount,
+            'phone'               => $phone,
             'merchant_request_id' => $stkResult['MerchantRequestID'] ?? null,
             'checkout_request_id' => $stkResult['CheckoutRequestID'] ?? null,
-            'status'           => 'Pending',
-            'created_at'       => date('Y-m-d H:i:s')
+            'status'              => 'Pending',
+            'created_at'          => date('Y-m-d H:i:s')
         ]);
-        mpesa_log("✅ Step 7: Pending transaction saved in database.");
-        mpesa_log("✅ Step 8: STK push flow complete. Awaiting user confirmation.");
+
+        mpesa_debug("✅ Pending transaction recorded — awaiting M-PESA callback.");
+        mpesa_log("✅ Pending transaction recorded — awaiting M-PESA callback.");
 
         return redirect()->to('/client/payments/pending')
-            ->with('success', 'STK Push sent successfully. Check your phone to complete payment.');
+            ->with('success', 'STK Push sent. Check your phone to complete payment.');
     }
 
     public function waiting()

@@ -42,12 +42,14 @@ class Mpesa extends BaseController
     }
 
     /**
-     * M-PESA callback endpoint
+     * 📲 M-PESA callback endpoint
      */
     public function callback()
     {
         try {
-            $data = $this->request->getJSON(true);
+            /** @var \CodeIgniter\HTTP\IncomingRequest $request */
+            $request = $this->request;
+            $data = $request->getJSON(true);
             $this->mpesa_debug("🔔 Incoming callback", $data);
 
             if (empty($data['Body']['stkCallback'])) {
@@ -87,7 +89,7 @@ class Mpesa extends BaseController
                 return $this->respond(['ResultCode' => 0, 'ResultDesc' => 'Acknowledged failure'], 200);
             }
 
-            // ✅ If success, extract metadata
+            // ✅ Extract metadata
             $metadata = $callback['CallbackMetadata']['Item'] ?? [];
             $amount = $mpesaReceipt = $phone = $transactionDate = null;
 
@@ -188,13 +190,6 @@ class Mpesa extends BaseController
                     $this->db->table('clients')->where('id', $clientId)->update(['status' => 'active']);
 
                     $this->mpesa_debug("✅ Package {$package->name} activated for client #{$clientId}, valid until {$endDate}");
-
-                    // ✅ Step 5: Send SMS notification
-                    $client = $this->clientModel->find($clientId);
-                    if ($client && !empty($client['phone'])) {
-                        $smsMessage = "Dear {$client['full_name']}, your payment of KES {$amount} for {$package->name} has been received. Valid until {$endDate}. Thank you!";
-                        $this->sendSms($client['phone'], $smsMessage);
-                    }
                 } else {
                     $this->mpesa_debug("❌ Package not found for ID: {$packageId}");
                 }
@@ -210,31 +205,18 @@ class Mpesa extends BaseController
     }
 
     /**
-     * Send SMS notification (placeholder)
+     * 📩 (Placeholder) SMS Notification Function
+     * Currently inactive – safe to leave as-is
      */
     private function sendSms($phone, $message)
     {
-        // Example stub — replace with your actual SMS provider
-        $smsApiUrl = 'https://sms-provider.com/api/send';
-        $payload = [
-            'to'      => $phone,
-            'message' => $message,
-            'sender'  => 'WiFiSystem'
-        ];
-
-        $ch = curl_init($smsApiUrl);
-        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-        curl_setopt($ch, CURLOPT_POST, true);
-        curl_setopt($ch, CURLOPT_POSTFIELDS, http_build_query($payload));
-        $response = curl_exec($ch);
-        curl_close($ch);
-
-        $this->mpesa_debug("📩 SMS sent to {$phone}: {$message}");
-        return $response;
+        // Placeholder – not currently used
+        $this->mpesa_debug("ℹ️ SMS feature skipped for {$phone}: {$message}");
+        return true;
     }
 
     /**
-     * Debug Logger
+     * 🧠 Debug Logger
      */
     private function mpesa_debug($label, $data = null)
     {

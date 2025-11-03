@@ -66,3 +66,22 @@ function send_stk_push($phone, $amount, $accountReference, $description)
 
     return $response ?: ['error' => 'No response from Daraja'];
 }
+
+if (!function_exists('mpesa_debug')) {
+    function mpesa_debug($message)
+    {
+        $logPath = WRITEPATH . 'logs/mpesa_debug.log';
+        $timestamp = date('Y-m-d H:i:s');
+        file_put_contents($logPath, "[{$timestamp}] {$message}\n", FILE_APPEND);
+    }
+}
+
+if (!function_exists('mpesa_log')) {
+    function mpesa_log($message)
+    {
+        $logPath = WRITEPATH . 'logs/mpesa_activity.log';
+        $timestamp = date('Y-m-d H:i:s');
+        file_put_contents($logPath, "[{$timestamp}] {$message}\n", FILE_APPEND);
+    }
+}
+

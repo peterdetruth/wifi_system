@@ -14,24 +14,41 @@ curl -Method POST `
   -Headers @{ "Content-Type" = "application/json" } `
   -Body '{"Body":{"stkCallback":{"MerchantRequestID":"12345","CheckoutRequestID":"ws_CO_31102025190221908708374149","ResultCode":0,"ResultDesc":"The service request is processed successfully.","CallbackMetadata":{"Item":[{"Name":"Amount","Value":100},{"Name":"MpesaReceiptNumber","Value":"MP123XYZ"},{"Name":"TransactionDate","Value":20251031152300},{"Name":"PhoneNumber","Value":254707381682}]}}}}'
 
-curl -X POST "https://inscriptionless-palpebral-lenita.ngrok-free.dev/mpesa/callback" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "Body": {
-      "stkCallback": {
-        "MerchantRequestID": "mrid_12345",
-        "CheckoutRequestID": "chk_67890",
-        "ResultCode": 0,
-        "ResultDesc": "Success",
-        "CallbackMetadata": {
-          "Item": [
-            {"Name": "Amount", "Value": 100},
-            {"Name": "MpesaReceiptNumber", "Value": "MPESA123XYZ"},
-            {"Name": "TransactionDate", "Value": 20251101123456},
-            {"Name": "PhoneNumber", "Value": 254707381682}
-          ]
-        }
+curl -X POST https://inscriptionless-palpebral-lenita.ngrok-free.dev/mpesa/callback \
+-H "Content-Type: application/json" \
+-d '{
+  "Body": {
+    "stkCallback": {
+      "MerchantRequestID": "12345",
+      "CheckoutRequestID": "ws_CO_31102025190221908708374149",
+      "ResultCode": 0,
+      "ResultDesc": "The service request is processed successfully.",
+      "CallbackMetadata": {
+        "Item": [
+          { "Name": "Amount", "Value": 100 },
+          { "Name": "MpesaReceiptNumber", "Value": "MP123XYZ" },
+          { "Name": "TransactionDate", "Value": 20251031152300 },
+          { "Name": "PhoneNumber", "Value": 254707381682 }
+        ]
       }
     }
-  }'
+  }
+}'
+
+curl -X POST https://inscriptionless-palpebral-lenita.ngrok-free.dev/mpesa/callback ^
+  -H "Content-Type: application/json" ^
+  -d "{ \"Body\": { \"stkCallback\": { \"MerchantRequestID\": \"12345\", \"CheckoutRequestID\": \"ws_CO_31102025190221908708374149\", \"ResultCode\": 0, \"ResultDesc\": \"The service request is processed successfully.\", \"CallbackMetadata\": { \"Item\": [ { \"Name\": \"Amount\", \"Value\": 100 }, { \"Name\": \"MpesaReceiptNumber\", \"Value\": \"MP123XYZ\" }, { \"Name\": \"TransactionDate\", \"Value\": 20251031152300 }, { \"Name\": \"PhoneNumber\", \"Value\": 254704359825 } ] } } } }"
+  
+
+
+
+INSERT INTO mpesa_transactions
+(client_id, package_id, amount, phone, merchant_request_id, checkout_request_id, status, created_at)
+VALUES (8, 31, 1, '254704359825', '12345', 'ws_CO_31102025190221908708374149', 'Pending', NOW()); 
+
+Africas talking api key
+atsk_05c0f4ecce17e3507f208fe82d0c784171521e4acc226fbd83351bba05a2ee961dc088d2
+
+Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
+.\start-dev.ps1
 

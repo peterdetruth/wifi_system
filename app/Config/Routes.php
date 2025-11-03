@@ -158,3 +158,5 @@ $routes->group('client', ['namespace' => 'App\Controllers\Client'], static funct
 
 $routes->get('client/payments/check-status', 'Client\Payments::checkStatus');
 $routes->get('test/envcheck', 'Test::envcheck');
+$routes->get('test-sms', 'Mpesa::testSms');
+

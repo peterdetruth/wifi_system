@@ -1,0 +1,8 @@
+__ci_last_regenerate|i:1762100133;_ci_previous_url|s:55:"http://localhost:8080/index.php/client/payments/pending";client_id|s:1:"8";client_username|s:11:"PeterMalaba";client_full_name|s:12:"Peter Malaba";client_logged_in|b:1;isLoggedIn|b:1;admin_id|s:1:"1";username|s:11:"Super Admin";role|s:10:"superadmin";mpesa_debug_trace|a:6:{i:0;s:35:"=== New Payment Process Started ===";i:1;s:53:"Step 1: Configuration loaded for environment: sandbox";i:2;s:34:"✅ Step 2: Access token received.";i:3;s:51:"Step 3: Sending STK Push for 254704359825, amount=1";i:4;s:357:"Raw STK Response: {
+            "MerchantRequestID":"e3bb-4ed0-b6d6-ea16f76a14587391",
+            "CheckoutRequestID":"ws_CO_02112025190929454704359825",
+            "ResponseCode": "0",
+            "ResponseDescription":"Success. Request accepted for processing",
+            "CustomerMessage":"Success. Request accepted for processing"
+        }
+        ";i:5;s:62:"✅ Pending transaction recorded — awaiting M-PESA callback.";}

@@ -18,6 +18,13 @@
   <a href="<?= site_url('client/dashboard') ?>" class="btn btn-outline-secondary mt-3">
     Cancel and Return to Dashboard
   </a>
+
+  <?php if (session()->has('mpesa_debug_trace')): ?>
+      <div style="background:#111;color:#0f0;padding:10px;font-family:monospace;">
+          <h4>DEBUG TRACE</h4>
+          <pre><?php foreach(session('mpesa_debug_trace') as $line) echo htmlspecialchars($line)."\n"; ?></pre>
+      </div>
+  <?php endif; ?>
 </div>
 
 <script>

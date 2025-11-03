@@ -112,6 +112,7 @@
         <a href="<?= base_url('/logout') ?>" class="list-group-item bg-danger text-white mt-3">
           <i class="bi bi-box-arrow-right me-2"></i> Logout
         </a>
+        <br><br>
       </div>
     </div>
 

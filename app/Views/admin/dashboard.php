@@ -1,4 +1,4 @@
-<?= $this->extend('layouts/admin_layout') ?>
+ 3<?= $this->extend('layouts/admin_layout') ?>
 <?= $this->section('content') ?>
 
 <div class="container-fluid py-3">
