@@ -10,12 +10,15 @@ class PaymentsModel extends Model
     protected $primaryKey = 'id';
 
     protected $allowedFields = [
+        'client_id',
+        'package_id',
         'amount',
         'mpesa_receipt',
         'phone',
         'transaction_date',
         'created_at'
     ];
+
 
     protected $useTimestamps = false;
 }

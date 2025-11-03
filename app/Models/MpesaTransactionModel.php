@@ -1,4 +1,6 @@
-<?php namespace App\Models;
+<?php
+
+namespace App\Models;
 
 use CodeIgniter\Model;
 
@@ -8,29 +10,26 @@ class MpesaTransactionModel extends Model
     protected $primaryKey = 'id';
 
     protected $allowedFields = [
-        'client_id',
-        'client_username',
-        'package_id',
-        'package_length',
-        'amount',
-        'phone',
+        'transaction_id',
         'merchant_request_id',
         'checkout_request_id',
+        'amount',
+        'mpesa_receipt_number',
+        'phone_number',
+        'transaction_date',
+        'result_code',
+        'result_desc',
         'status',
         'created_at',
         'updated_at'
     ];
 
     protected $useTimestamps = false;
-    protected $createdField  = 'created_at';
-    protected $updatedField  = '';
 
     protected $validationRules = [
-        'transaction_id' => 'required|is_unique[mpesa_transactions.transaction_id,id,{id}]',
-        'amount'         => 'required|decimal'
-    ];
-
-    protected $validationMessages = [
-        'transaction_id' => ['is_unique' => 'This transaction ID already exists.']
+        'checkout_request_id' => 'required|string|max_length[100]',
+        'transaction_id'      => 'permit_empty|string|max_length[100]',
+        'amount'              => 'permit_empty|decimal',
+        'status'              => 'permit_empty|in_list[Pending,Success,Failed]'
     ];
 }
