@@ -1,0 +1,46 @@
+# ===========================================
+# CodeIgniter 4 Production .htaccess
+# For Truehost / cPanel Deployment
+# ===========================================
+
+# Disable directory browsing
+Options -Indexes
+
+<IfModule mod_rewrite.c>
+    Options +FollowSymlinks
+    RewriteEngine On
+
+    # Adjust this if your app is in a subfolder (example: /wifi_system/)
+    RewriteBase /
+
+    # Redirect Trailing Slashes
+    RewriteCond %{REQUEST_FILENAME} !-d
+    RewriteCond %{REQUEST_URI} (.+)/$
+    RewriteRule ^ %1 [L,R=301]
+
+    # Redirect www to non-www (optional — comment out if not desired)
+    RewriteCond %{HTTP_HOST} ^www\.(.+)$ [NC]
+    RewriteRule ^ https://%1%{REQUEST_URI} [R=301,L]
+
+    # Send all requests that are not files/folders to index.php
+    RewriteCond %{REQUEST_FILENAME} !-f
+    RewriteCond %{REQUEST_FILENAME} !-d
+    RewriteRule ^(.*)$ index.php/$1 [L,QSA]
+
+    # Pass Authorization header (important for APIs)
+    RewriteCond %{HTTP:Authorization} .
+    RewriteRule .* - [E=HTTP_AUTHORIZATION:%{HTTP:Authorization}]
+</IfModule>
+
+<IfModule !mod_rewrite.c>
+    # Fallback if mod_rewrite is not enabled
+    ErrorDocument 404 index.php
+</IfModule>
+
+# Hide server version info
+ServerSignature Off
+
+# Deny access to sensitive files
+<FilesMatch "\.(env|log|sql|md|gitignore|htaccess|htpasswd|ini|sh|bak|config|json)$">
+    Require all denied
+</FilesMatch>
