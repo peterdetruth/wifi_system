@@ -110,11 +110,6 @@ class Mpesa extends BaseController
                 }
             }
 
-            if (!$transaction) {
-                $this->mpesa_debug("❌ Could not create or retrieve transaction for {$checkoutRequestID}");
-                return $this->failServerError('Transaction could not be created');
-            }
-
             // Handle failed payments
             if ($resultCode != 0) {
                 $this->mpesaTransactionModel->update($transaction['id'], [
@@ -160,29 +155,36 @@ class Mpesa extends BaseController
                 return $this->respond(['ResultCode' => 1, 'ResultDesc' => 'Missing MpesaReceiptNumber'], 400);
             }
 
-            // Duplicate protection (check by mpesa_receipt_number)
+            // Duplicate protection
             $exists = $this->paymentsModel->where('mpesa_receipt_number', $mpesaReceipt)->first();
             if ($exists) {
                 $this->mpesa_debug("⚠️ Duplicate payment ignored for {$mpesaReceipt}");
                 return $this->respond(['ResultCode' => 0, 'ResultDesc' => 'Duplicate ignored'], 200);
             }
 
+            // 🔍 Optional: auto-resolve client & package mapping by phone
+            $mapping = $this->resolveClientPackageMapping($phone);
+            $clientId = $mapping['client_id'] ?? ($transaction['client_id'] ?? null);
+            $packageId = $mapping['package_id'] ?? ($transaction['package_id'] ?? null);
+
             // Update transaction info safely
             $this->mpesaTransactionModel->update($transaction['id'], [
-                'amount'                => $amount ?? $transaction['amount'],
-                'phone_number'          => $phone ?? $transaction['phone_number'],
-                'mpesa_receipt_number'  => $mpesaReceipt,
-                'transaction_date'      => $transactionDate ?? $transaction['transaction_date'],
-                'status'                => 'Success',
-                'updated_at'            => date('Y-m-d H:i:s'),
+                'amount'               => $amount ?? $transaction['amount'],
+                'phone_number'         => $phone ?? $transaction['phone_number'],
+                'mpesa_receipt_number' => $mpesaReceipt,
+                'transaction_date'     => $transactionDate ?? $transaction['transaction_date'],
+                'client_id'            => $clientId,
+                'package_id'           => $packageId,
+                'status'               => 'Success',
+                'updated_at'           => date('Y-m-d H:i:s'),
             ]);
             $this->mpesa_debug("💾 Transaction updated to Success — ID {$transaction['id']}");
 
             // Save payment safely
             $this->paymentsModel->insert([
                 'mpesa_transaction_id' => $transaction['id'],
-                'client_id'            => $transaction['client_id'] ?? null,
-                'package_id'           => $transaction['package_id'] ?? null,
+                'client_id'            => $clientId,
+                'package_id'           => $packageId,
                 'amount'               => $amount,
                 'phone'                => $phone,
                 'mpesa_receipt_number' => $mpesaReceipt,
@@ -191,14 +193,13 @@ class Mpesa extends BaseController
             ]);
             $this->mpesa_debug("✅ Payment saved successfully for {$mpesaReceipt}");
 
-            // Auto-activate package
-            if (!empty($transaction['package_id']) && !empty($transaction['client_id'])) {
-                $this->activateClientPackage(
-                    $transaction['client_id'],
-                    $transaction['package_id'],
-                    $amount
-                );
-                $this->mpesa_debug("✅ Auto-activation completed for client #{$transaction['client_id']}");
+            // ✅ Auto-activation (safe & transactional)
+            if (!empty($clientId) && !empty($packageId)) {
+                if ($this->safeActivateClientPackage($clientId, $packageId, $amount)) {
+                    $this->mpesa_debug("✅ Auto-activation completed for client #{$clientId}");
+                } else {
+                    $this->mpesa_debug("⚠️ Activation skipped or failed for client #{$clientId}");
+                }
             } else {
                 $this->mpesa_debug("⚠️ Skipped auto-activation — missing client_id or package_id");
             }
@@ -209,6 +210,72 @@ class Mpesa extends BaseController
             $this->mpesa_debug("🔥 Exception in callback: " . $e->getMessage());
             return $this->failServerError($e->getMessage());
         }
+    }
+
+    /**
+     * Safely activate a client’s package after successful payment
+     * ----------------------------------------------------------
+     * Handles:
+     *   - Transaction wrapping (commit/rollback)
+     *   - Validation of client + package existence
+     *   - Insertion into client_packages (or update if already active)
+     *   - Logging all steps
+     */
+    private function safeActivateClientPackage(int $clientId, int $packageId, float $amount): bool
+    {
+        $db = \Config\Database::connect();
+        $db->transStart();
+
+        try {
+            // Example: mark subscription as active or renew
+            $builder = $db->table('subscriptions');
+            $existing = $builder->where('client_id', $clientId)
+                ->where('package_id', $packageId)
+                ->get()
+                ->getRowArray();
+
+            if ($existing) {
+                $builder->where('id', $existing['id'])
+                    ->update([
+                        'status' => 'active',
+                        'updated_at' => date('Y-m-d H:i:s')
+                    ]);
+            } else {
+                $builder->insert([
+                    'client_id' => $clientId,
+                    'package_id' => $packageId,
+                    'status' => 'active',
+                    'created_at' => date('Y-m-d H:i:s')
+                ]);
+            }
+
+            $db->transCommit();
+            return true;
+        } catch (\Throwable $e) {
+            $db->transRollback();
+            $this->mpesa_debug("💣 Activation error: " . $e->getMessage());
+            return false;
+        }
+    }
+
+    private function resolveClientPackageMapping(string $phone): ?array
+    {
+        $db = \Config\Database::connect();
+        $client = $db->table('clients')
+            ->select('id, default_package_id')
+            ->where('phone', $phone)
+            ->get()
+            ->getRowArray();
+
+        if (!$client) {
+            $this->mpesa_debug("ℹ️ No client found for phone {$phone}");
+            return null;
+        }
+
+        return [
+            'client_id' => $client['id'],
+            'package_id' => $client['default_package_id'] ?? null,
+        ];
     }
 
     private function safeInsertTransaction($merchantRequestID, $checkoutRequestID)

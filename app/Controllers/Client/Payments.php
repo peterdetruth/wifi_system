@@ -116,7 +116,9 @@ class Payments extends BaseController
                 'phone' => $phone
             ]);
 
-            return view('client/payments/pending', [
+            $checkoutRequestID = $result['CheckoutRequestID'] ?? null;
+
+            return view('client/payments/pending' . $checkoutRequestID, [
                 'package' => $package,
                 'client' => $client,
                 'amount' => $amount,
@@ -365,8 +367,9 @@ class Payments extends BaseController
 
         mpesa_debug("✅ Pending transaction recorded — awaiting M-PESA callback.");
         mpesa_log("✅ Pending transaction recorded — awaiting M-PESA callback.");
+        $checkoutRequestID = $stkResult['CheckoutRequestID'] ?? null;
 
-        return redirect()->to('/client/payments/pending')
+        return redirect()->to('/client/payments/pending/' . $checkoutRequestID)
             ->with('success', 'STK Push sent. Check your phone to complete payment.');
     }
 
@@ -397,9 +400,16 @@ class Payments extends BaseController
         ]);
     }
 
-    public function pending($checkoutRequestID)
+    public function pending($checkoutRequestID = null)
     {
-        return view('client/payments/pending', ['checkoutRequestID' => $checkoutRequestID]);
+        if (!$checkoutRequestID) {
+            return redirect()->to('/client/dashboard')
+                ->with('error', 'Invalid or missing transaction reference.');
+        }
+
+        return view('client/payments/pending', [
+            'checkoutRequestID' => $checkoutRequestID,
+        ]);
     }
 
     public function checkStatus()

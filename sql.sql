@@ -24,6 +24,7 @@ CREATE TABLE packages (
   devices INT NOT NULL DEFAULT 1,
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
+ALTER TABLE packages ENGINE=InnoDB;
 ALTER TABLE packages ADD COLUMN updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP;
 
 ALTER TABLE packages
@@ -110,6 +111,7 @@ SET validity_days =
         WHEN 'years' THEN duration_length * 365
         ELSE 7
     END;
+    
 
 -- Clients (customers)
 CREATE TABLE clients (
@@ -125,6 +127,7 @@ CREATE TABLE clients (
 );
 ALTER TABLE clients ADD COLUMN updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP;
 ALTER TABLE clients ADD INDEX (phone);
+ALTER TABLE clients ENGINE=InnoDB;
 
 
 -- Routers
@@ -214,41 +217,21 @@ ALTER TABLE transactions
 
 -- Mpesa transaction log
 CREATE TABLE mpesa_transactions (
-  id INT AUTO_INCREMENT PRIMARY KEY,
-  client_id INT NULL,
-  client_username VARCHAR(100) NULL,
-  package_id INT NULL,
-  package_length VARCHAR(50) NULL,
-  amount DECIMAL(10,2) NOT NULL,
-  transaction_id VARCHAR(150) NOT NULL,
-  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
-ALTER TABLE mpesa_transactions ADD COLUMN phone VARCHAR(50) NOT NULL;
--- Also, index transaction_id for quick lookups:
-ALTER TABLE mpesa_transactions ADD UNIQUE (transaction_id);
--- Right now, this table isn’t linked to anything.
--- Let’s fix that and add foreign keys:
-ALTER TABLE mpesa_transactions
-  ADD CONSTRAINT fk_mpesa_client
-    FOREIGN KEY (client_id) REFERENCES clients(id)
-    ON DELETE SET NULL,
-  ADD CONSTRAINT fk_mpesa_package
-    FOREIGN KEY (package_id) REFERENCES packages(id)
-    ON DELETE SET NULL;
-
--- add needed columns if not present
-ALTER TABLE mpesa_transactions
-  ADD COLUMN checkout_request_id VARCHAR(255) NULL AFTER transaction_id,
-  ADD COLUMN merchant_request_id VARCHAR(255) NULL AFTER checkout_request_id,
-  ADD COLUMN transaction_ref INT(11) NULL AFTER merchant_request_id, -- links to your transactions.id if you use it
-  ADD COLUMN status VARCHAR(50) NULL AFTER transaction_ref,
-  ADD COLUMN callback_raw LONGTEXT NULL AFTER status,
-  ADD COLUMN completed_at DATETIME NULL AFTER callback_raw;
-
-ALTER TABLE mpesa_transactions
-ADD COLUMN updated_at DATETIME NULL AFTER created_at;
-
-
+    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    transaction_id VARCHAR(100) DEFAULT NULL,
+    merchant_request_id VARCHAR(100) DEFAULT NULL,
+    checkout_request_id VARCHAR(100) NOT NULL UNIQUE,
+    amount DECIMAL(10,2) DEFAULT NULL,
+    mpesa_receipt_number VARCHAR(50) DEFAULT NULL,
+    phone_number VARCHAR(20) DEFAULT NULL,
+    transaction_date DATETIME DEFAULT NULL,
+    result_code INT DEFAULT NULL,
+    result_desc VARCHAR(255) DEFAULT NULL,
+    status ENUM('Pending','Success','Failed') DEFAULT 'Pending',
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT NULL ON UPDATE CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+ALTER TABLE mpesa_transactions ADD COLUMN mpesa_receipt VARCHAR(50) GENERATED ALWAYS AS (mpesa_receipt_number) VIRTUAL;
 
 
 -- Subscribers view helper table (optional) - we'll infer active/expired from transactions
@@ -406,34 +389,40 @@ CREATE TABLE mpesa_logs (
     created_at DATETIME
 );
 
-CREATE TABLE `payments` (
-  `id` INT NOT NULL AUTO_INCREMENT,
-  `client_id` INT DEFAULT NULL,
-  `mpesa_receipt` VARCHAR(150) NOT NULL,
-  `phone` VARCHAR(50) DEFAULT NULL,
-  `amount` DECIMAL(10,2) NOT NULL DEFAULT 0.00,
-  `transaction_date` DATETIME DEFAULT NULL,
-  `created_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  PRIMARY KEY (`id`),
-  UNIQUE KEY `mpesa_receipt` (`mpesa_receipt`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
-
--- If you want to make it more forgiving during testing, you can temporarily relax the unique constraint:
--- (You can re-add it later when your callback flow is stable.)
-ALTER TABLE payments DROP INDEX mpesa_receipt;
-
-CREATE TABLE client_packages (
-    id INT AUTO_INCREMENT PRIMARY KEY,
-    client_id INT NOT NULL,
-    package_id INT NOT NULL,
+CREATE TABLE IF NOT EXISTS payments (
+    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    mpesa_transaction_id INT UNSIGNED,
+    client_id INT UNSIGNED,
+    package_id INT UNSIGNED,
     amount DECIMAL(10,2) NOT NULL,
+    payment_method ENUM('mpesa', 'cash', 'card', 'bank') DEFAULT 'mpesa',
+    status ENUM('pending', 'completed', 'failed') DEFAULT 'completed',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (mpesa_transaction_id) REFERENCES mpesa_transactions(id) ON DELETE SET NULL ON UPDATE CASCADE
+);
+ALTER TABLE payments 
+ADD COLUMN mpesa_receipt_number VARCHAR(50);
+
+ALTER TABLE payments 
+ADD COLUMN phone VARCHAR(50);
+
+ALTER TABLE payments 
+ADD COLUMN transaction_date DATETIME NOT NULL;
+
+
+CREATE TABLE IF NOT EXISTS client_packages (
+    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    client_id INT UNSIGNED NOT NULL,
+    package_id INT UNSIGNED NOT NULL,
+    amount DECIMAL(10,2) DEFAULT NULL,
     start_date DATETIME NOT NULL,
     end_date DATETIME NOT NULL,
     status ENUM('active','expired','pending') DEFAULT 'active',
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-    FOREIGN KEY (client_id) REFERENCES clients(id),
-    FOREIGN KEY (package_id) REFERENCES packages(id)
+    updated_at TIMESTAMP NULL DEFAULT NULL ON UPDATE CURRENT_TIMESTAMP
 );
+
+
+
 
 
