@@ -3,7 +3,7 @@ atsk_05c0f4ecce17e3507f208fe82d0c784171521e4acc226fbd83351bba05a2ee961dc088d2
 
 git init
 git add .
-git commit -m "Handling different environments setup"
+git commit -m "Removed ngrok opening command"
 
 git remote add origin https://github.com/peterdetruth/wifi_system.git
 git branch -M main
