@@ -26,3 +26,9 @@ Thumbs.db
 node_modules/
 dist/
 build/
+
+# .gitignore additions
+public/index.php
+public/.htaccess
+writable/*
+

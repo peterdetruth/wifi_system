@@ -1,64 +1,13 @@
-<?php if (session()->getFlashdata('error')): ?>
-  <p class="error"><?= session()->getFlashdata('error') ?></p>
-<?php endif; ?>
-
-<?php if (session()->getFlashdata('success')): ?>
-  <p class="success"><?= session()->getFlashdata('success') ?></p>
-<?php endif; ?>
-
-<link href="<?= base_url('assets/css/bootstrap.min.css') ?>" rel="stylesheet">
-<script src="<?= base_url('assets/js/jquery-3.6.0.min.js') ?>"></script>
-
 Africas talking api key
 atsk_05c0f4ecce17e3507f208fe82d0c784171521e4acc226fbd83351bba05a2ee961dc088d2
 
-curl -X POST https://inscriptionless-palpebral-lenita.ngrok-free.dev/mpesa/callback \
--H "Content-Type: application/json" \
--d '{
-  "Body": {
-    "stkCallback": {
-      "MerchantRequestID": "12345",
-      "CheckoutRequestID": "ws_CO_31102025190221908708374149",
-      "ResultCode": 0,
-      "ResultDesc": "The service request is processed successfully.",
-      "CallbackMetadata": {
-        "Item": [
-          { "Name": "Amount", "Value": 100 },
-          { "Name": "MpesaReceiptNumber", "Value": "MP123XYZ" },
-          { "Name": "TransactionDate", "Value": 20251031152300 },
-          { "Name": "PhoneNumber", "Value": 254707381682 }
-        ]
-      }
-    }
-  }
-}'
-
-curl -X POST https://inscriptionless-palpebral-lenita.ngrok-free.dev/mpesa/callback ^
-  -H "Content-Type: application/json" ^
-  -d "{ \"Body\": { \"stkCallback\": { \"MerchantRequestID\": \"12345\", \"CheckoutRequestID\": \"ws_CO_0311202512000000000001\", \"ResultCode\": 0, \"ResultDesc\": \"The service request is processed successfully.\", \"CallbackMetadata\": { \"Item\": [ { \"Name\": \"Amount\", \"Value\": 100 }, { \"Name\": \"MpesaReceiptNumber\", \"Value\": \"MP124XYZ\" }, { \"Name\": \"TransactionDate\", \"Value\": 20251103120000 }, { \"Name\": \"PhoneNumber\", \"Value\": 254704359825 } ] } } } }"
-
-  curl -X POST https://inscriptionless-palpebral-lenita.ngrok-free.dev/mpesa/callback ^
-  -H "Content-Type: application/json" ^
-  -d "{ \"Body\": { \"stkCallback\": { \"MerchantRequestID\": \"54321\", \"CheckoutRequestID\": \"ws_CO_0311202512350000000003\", \"ResultCode\": 0, \"ResultDesc\": \"The service request is processed successfully.\", \"CallbackMetadata\": { \"Item\": [ { \"Name\": \"Amount\", \"Value\": 100 }, { \"Name\": \"MpesaReceiptNumber\", \"Value\": \"MP126XYZ\" }, { \"Name\": \"TransactionDate\", \"Value\": 20251103123500 }, { \"Name\": \"PhoneNumber\", \"Value\": 254704359825 } ] } } } }"
-
-curl -X POST https://inscriptionless-palpebral-lenita.ngrok-free.dev/mpesa/callback ^
-  -H "Content-Type: application/json" ^
-  -d "{ \"Body\": { \"stkCallback\": { \"MerchantRequestID\": \"b438-4109-9f7f-933c2cc425fd13386\", \"CheckoutRequestID\": \"ws_CO_04112025091539277704359825\", \"ResultCode\": 0, \"ResultDesc\": \"The service request is processed successfully.\", \"CallbackMetadata\": { \"Item\": [ { \"Name\": \"Amount\", \"Value\": 1000 }, { \"Name\": \"MpesaReceiptNumber\", \"Value\": \"QWERTY123\" }, { \"Name\": \"TransactionDate\", \"Value\": 20250101121520 }, { \"Name\": \"PhoneNumber\", \"Value\": 254712345678 } ] } } } }"
-
-
-INSERT INTO mpesa_transactions
-(client_id, package_id, amount, phone, merchant_request_id, checkout_request_id, status, created_at)
-VALUES (8, 31, 100, '254704359825', '12346', 'ws_CO_0311202512000000000001', 'Pending', NOW());
-
-Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
-.\start-dev.ps1
-
-cd C:\xampp\htdocs\wifi_system
 git init
 git add .
-git commit -m "Initial commit - full system"
-git branch -M main
+git commit -m "Handling different environments setup"
+
 git remote add origin https://github.com/peterdetruth/wifi_system.git
+git branch -M main
 git push -u origin main
+
 
 
