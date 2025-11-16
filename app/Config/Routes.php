@@ -95,6 +95,14 @@ $routes->group('admin', ['filter' => 'auth', 'namespace' => 'App\Controllers'], 
     });
 });
 
+$routes->group('admin/features', ['namespace' => 'App\Controllers\Admin'], function($routes) {
+    $routes->get('/', 'Features::index');
+    $routes->get('create', 'Features::create');
+    $routes->post('store', 'Features::store');
+    $routes->get('complete/(:num)', 'Features::markComplete/$1');
+    $routes->get('delete/(:num)', 'Features::delete/$1');
+});
+
 // ==============================
 // 💸 M-PESA CALLBACK
 // ==============================

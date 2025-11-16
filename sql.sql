@@ -422,7 +422,12 @@ CREATE TABLE IF NOT EXISTS client_packages (
     updated_at TIMESTAMP NULL DEFAULT NULL ON UPDATE CURRENT_TIMESTAMP
 );
 
-
-
-
-
+CREATE TABLE `feature_requests` (
+    `id` INT UNSIGNED NOT NULL AUTO_INCREMENT,
+    `name` VARCHAR(255) NOT NULL,
+    `description` TEXT NULL,
+    `status` ENUM('pending', 'complete') NOT NULL DEFAULT 'pending',
+    `created_at` DATETIME NULL,
+    `updated_at` DATETIME NULL,
+    PRIMARY KEY (`id`)
+);

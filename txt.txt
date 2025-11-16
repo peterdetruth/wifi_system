@@ -11,3 +11,7 @@ git push -u origin main
 
 
 
+mpesa_transactions transactions payments subscriptions mpesa_logs
+
+Let us consolidate initiatePayment() and process() STK logic for clarity and maintainability. Below is the issue
+

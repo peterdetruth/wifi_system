@@ -10,19 +10,24 @@ class MpesaTransactionModel extends Model
     protected $primaryKey = 'id';
 
     protected $allowedFields = [
-        'transaction_id',
+        'client_id',
+        'client_username',
+        'package_id',
+        'package_length',
+        'amount',
+        'phone_number',
         'merchant_request_id',
         'checkout_request_id',
-        'amount',
         'mpesa_receipt_number',
-        'phone_number',
         'transaction_date',
         'result_code',
         'result_desc',
         'status',
         'created_at',
-        'updated_at'
+        'updated_at',
+        'transaction_id'
     ];
+
 
     protected $useTimestamps = false;
 

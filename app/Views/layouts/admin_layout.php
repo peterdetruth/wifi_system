@@ -107,6 +107,9 @@
         <a href="<?= base_url('admin/subscribers/expired') ?>" class="list-group-item bg-dark text-white">
           <i class="bi bi-person-x me-2"></i> Expired
         </a>
+        <a href="<?= base_url('admin/features') ?>" class="list-group-item bg-dark text-white">
+          <i class="bi bi-person-x me-2"></i> Features
+        </a>
 
         <!-- LOGOUT -->
         <a href="<?= base_url('/logout') ?>" class="list-group-item bg-danger text-white mt-3">
