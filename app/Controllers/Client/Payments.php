@@ -9,7 +9,9 @@ use App\Models\TransactionModel;
 use App\Models\MpesaTransactionModel;
 use App\Models\VoucherModel;
 use App\Models\ClientModel;
-use App\Helpers\ReceiptHelper;
+use App\Services\ActivationService;
+use App\Services\MpesaLogger;
+use App\Services\MpesaService;
 
 class Payments extends BaseController
 {
@@ -20,6 +22,10 @@ class Payments extends BaseController
     protected $voucherModel;
     protected $clientModel;
 
+    protected $mpesaLogger;
+    protected $activationService;
+    protected $mpesaService;
+
     public function __construct()
     {
         $this->packageModel = new PackageModel();
@@ -28,109 +34,19 @@ class Payments extends BaseController
         $this->mpesaTransactionModel = new MpesaTransactionModel();
         $this->voucherModel = new VoucherModel();
         $this->clientModel = new ClientModel();
-        helper(['form', 'url']);
+
+        helper(['form', 'url', 'text']);
+
+        // Custom logger
+        $this->mpesaLogger = new MpesaLogger();
+
+        // Services
+        $this->activationService = new ActivationService($this->mpesaLogger);
+        $this->mpesaService = new MpesaService($this->mpesaLogger);
     }
 
     /**
-     * Initiate M-PESA STK Push
-     */
-    public function initiatePayment($packageId)
-    {
-        helper('text');
-
-        $package = $this->packageModel->find($packageId);
-        $client = $this->clientModel->find(session()->get('client_id'));
-
-        if (!$package || !$client) {
-            return redirect()->back()->with('error', 'Invalid client or package.');
-        }
-
-        $amount = (int) $package['price'];
-        $phone = $client['phone'];
-
-        // 🔹 Request access token
-        $consumerKey = getenv('MPESA_CONSUMER_KEY');
-        $consumerSecret = getenv('MPESA_CONSUMER_SECRET');
-        $credentials = base64_encode("$consumerKey:$consumerSecret");
-
-        $ch = curl_init();
-        curl_setopt($ch, CURLOPT_URL, 'https://sandbox.safaricom.co.ke/oauth/v1/generate?grant_type=client_credentials');
-        curl_setopt($ch, CURLOPT_HTTPHEADER, ["Authorization: Basic $credentials"]);
-        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-        $response = curl_exec($ch);
-        $result = json_decode($response);
-        curl_close($ch);
-
-        if (!isset($result->access_token)) {
-            return redirect()->back()->with('error', 'Failed to obtain M-PESA access token.');
-        }
-
-        $accessToken = $result->access_token;
-
-        // 🔹 Prepare STK request
-        $BusinessShortCode = getenv('MPESA_SHORTCODE');
-        $Passkey = getenv('MPESA_PASSKEY');
-        $Timestamp = date('YmdHis');
-        $Password = base64_encode($BusinessShortCode . $Passkey . $Timestamp);
-
-        $stkData = [
-            'BusinessShortCode' => $BusinessShortCode,
-            'Password'          => $Password,
-            'Timestamp'         => $Timestamp,
-            'TransactionType'   => 'CustomerPayBillOnline',
-            'Amount'            => $amount,
-            'PartyA'            => $phone,
-            'PartyB'            => $BusinessShortCode,
-            'PhoneNumber'       => $phone,
-            'CallBackURL'       => getenv('MPESA_CALLBACK_URL'),
-            'AccountReference'  => 'Hotspot_' . $client['username'],
-            'TransactionDesc'   => 'Payment for ' . $package['name']
-        ];
-
-        // 🔹 Initiate STK Push
-        $ch = curl_init();
-        curl_setopt($ch, CURLOPT_URL, 'https://sandbox.safaricom.co.ke/mpesa/stkpush/v1/processrequest');
-        curl_setopt($ch, CURLOPT_HTTPHEADER, [
-            "Content-Type: application/json",
-            "Authorization: Bearer $accessToken"
-        ]);
-        curl_setopt($ch, CURLOPT_POST, true);
-        curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($stkData));
-        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-        $response = curl_exec($ch);
-        $result = json_decode($response, true);
-        curl_close($ch);
-
-        if (isset($result['ResponseCode']) && $result['ResponseCode'] == "0") {
-            $this->mpesaTransactionModel->insert([
-                'client_id' => $client['id'],
-                'client_username' => $client['username'],
-                'package_id' => $package['id'],
-                'package_length' => $package['duration_length'] . ' ' . $package['duration_unit'],
-                'amount' => $amount,
-                'merchant_request_id' => $result['MerchantRequestID'] ?? null,
-                'checkout_request_id' => $result['CheckoutRequestID'] ?? null,
-                'status' => 'Pending',
-                'created_at' => date('Y-m-d H:i:s'),
-                'phone' => $phone
-            ]);
-
-            $checkoutRequestID = $result['CheckoutRequestID'] ?? null;
-            return view('client/payments/pending', [
-                'package' => $package,
-                'client' => $client,
-                'amount' => $amount,
-                'phone' => $phone,
-                'checkoutRequestID' => $checkoutRequestID
-            ]);
-        } else {
-            return redirect()->back()->with('error', 'STK push failed: ' . ($result['errorMessage'] ?? 'Unknown error'));
-        }
-    }
-
-
-    /**
-     * Show checkout page for selected package
+     * Show checkout page
      */
     public function checkout($packageId)
     {
@@ -148,107 +64,119 @@ class Payments extends BaseController
      */
     public function process()
     {
-        helper(['mpesa_logger', 'mpesa_debug']);
+        helper(['mpesa_debug']);
         mpesa_debug_clear();
         mpesa_debug("=== New Payment Process Started ===");
-        mpesa_log("=== New Payment Process Started ===");
 
         $clientId = session()->get('client_id');
         if (!$clientId) return redirect()->to('/client/login');
 
-        $packageId   = $this->request->getPost('package_id');
+        $packageId   = (int)$this->request->getPost('package_id');
         $voucherCode = trim($this->request->getPost('voucher_code'));
         $phone       = trim($this->request->getPost('phone'));
 
         $package = $this->packageModel->find($packageId);
         if (!$package) {
             mpesa_debug("❌ Package not found: {$packageId}");
-            mpesa_log("❌ Package not found: {$packageId}");
             return redirect()->to('/client/packages')->with('error', 'Package not found.');
         }
 
         $client = $this->clientModel->find($clientId);
-        $clientUsername = $client['username'] ?? 'Unknown';
         $phone = $phone ?: ($client['phone'] ?? '');
-        $expiryDate = $this->calculateExpiry($package['duration_length'], $package['duration_unit']);
+        $clientUsername = $client['username'] ?? 'Unknown';
 
-        $subscriptionData = [
-            'client_id'  => $clientId,
-            'package_id' => $packageId,
-            'router_id'  => $package['router_id'],
-            'start_date' => date('Y-m-d H:i:s'),
-            'expires_on' => $expiryDate,
-            'status'     => 'active'
-        ];
-
-        // 🔹 CASE 1: Voucher
+        // Voucher redemption
         if (!empty($voucherCode)) {
             mpesa_debug("Voucher detected — checking validity ({$voucherCode})");
-            mpesa_log("Voucher detected — checking validity ({$voucherCode})");
-
             $voucher = $this->voucherModel->isValidVoucher($voucherCode);
             if (!$voucher) {
                 mpesa_debug("❌ Invalid or expired voucher: {$voucherCode}");
-                mpesa_log("❌ Invalid or expired voucher: {$voucherCode}");
                 return redirect()->back()->withInput()->with('error', 'Invalid or expired voucher code.');
             }
 
-            $db = \Config\Database::connect();
-            $db->transStart();
             try {
-                if (!$this->subscriptionModel->insert($subscriptionData)) {
-                    throw new \Exception('Failed to create subscription: ' . json_encode($this->subscriptionModel->errors()));
-                }
-                $this->voucherModel->markAsUsed($voucherCode, $clientId);
-                $transactionId = $this->transactionModel->insert([
-                    'client_id'      => $clientId,
-                    'package_id'     => $packageId,
-                    'package_type'   => $package['type'],
-                    'package_length' => $package['duration_length'] . ' ' . $package['duration_unit'],
-                    'amount'         => 0,
-                    'method'         => 'voucher',
-                    'mpesa_code'     => $voucherCode,
-                    'router_id'      => $package['router_id'],
-                    'status'         => 'success',
-                    'created_on'     => date('Y-m-d H:i:s'),
-                    'expires_on'     => $expiryDate
-                ]);
-                $db->transComplete();
-                if ($db->transStatus() === false) throw new \Exception('Database commit failed during voucher redemption.');
+                $activated = $this->activationService->activate($clientId, $packageId, 0);
+                if (!$activated) throw new \Exception("ActivationService failed.");
 
-                $pdfPath = ReceiptHelper::generate($transactionId);
-                ReceiptHelper::sendEmail($clientId, $pdfPath);
+                $this->voucherModel->markAsUsed($voucherCode, $clientId);
 
                 mpesa_debug("✅ Voucher successfully redeemed for {$clientUsername}.");
-                mpesa_log("✅ Voucher successfully redeemed for {$clientUsername}.");
-
-                return redirect()->to('/client/payments/success/' . $transactionId)
+                return redirect()->to('/client/payments/success/0')
                     ->with('success', 'Voucher redeemed successfully! Subscription activated.');
-            } catch (\Exception $e) {
-                $db->transRollback();
+            } catch (\Throwable $e) {
                 mpesa_debug("❌ Voucher redemption failed: " . $e->getMessage());
-                mpesa_log("❌ Voucher redemption failed: " . $e->getMessage());
                 return redirect()->back()->with('error', 'Voucher redemption failed: ' . $e->getMessage());
             }
         }
 
-        // 🔹 CASE 2: M-PESA Payment
-        $amount = (int) $package['price'];
+        // M-PESA payment
+        $amount = (float)$package['price'];
         if ($amount <= 0) {
             mpesa_debug("❌ Invalid amount: {$amount}");
-            mpesa_log("❌ Invalid amount: {$amount}");
             return redirect()->back()->with('error', 'Invalid payment amount.');
         }
 
-        // Steps for M-PESA payment are handled in initiatePayment() as above
-        return $this->initiatePayment($packageId);
+        try {
+            $db = \Config\Database::connect();
+            $db->transStart();
+
+            $subscriptionData = [
+                'client_id'  => $clientId,
+                'package_id' => $packageId,
+                'amount'     => $amount,
+                'start_date' => date('Y-m-d H:i:s'),
+                'end_date'   => $this->calculateExpiry($package['duration_length'], $package['duration_unit']),
+                'status'     => 'pending'
+            ];
+
+            $db->table('client_packages')->insert($subscriptionData);
+            $clientPackageId = $db->insertID();
+            $db->transComplete();
+
+            if ($db->transStatus() === false) {
+                $error = $db->error();
+                mpesa_debug("❌ DB Error inserting client_packages: " . json_encode($error));
+                throw new \Exception('Database commit failed during client_packages creation.');
+            }
+
+            mpesa_debug("🔹 Pending client_packages row created: {$clientPackageId}");
+
+            // Initiate M-PESA transaction
+            $success = $this->mpesaService->initiateTransaction(
+                $clientId,
+                $packageId,
+                $amount,
+                $phone,
+                null,
+                null
+            );
+
+            if (!$success) throw new \Exception("Failed to initiate M-PESA transaction.");
+
+            mpesa_debug("✅ M-PESA transaction initiated for client {$clientUsername}");
+
+            return view('client/payments/waiting', [
+                'clientPackageId' => $clientPackageId,
+                'amount' => $amount,
+                'phone' => $phone
+            ]);
+        } catch (\Throwable $e) {
+            mpesa_debug("❌ Error initiating payment: " . $e->getMessage());
+            return redirect()->back()->with('error', 'Failed to initiate payment: ' . $e->getMessage());
+        }
     }
 
+    /**
+     * Waiting page
+     */
     public function waiting()
     {
         return view('client/payments/waiting');
     }
 
+    /**
+     * Success page
+     */
     public function success($transactionId)
     {
         $clientId = session()->get('client_id');
@@ -265,10 +193,15 @@ class Payments extends BaseController
 
         return view('client/payments/success', [
             'package' => $package,
-            'subscription' => ['expires_on' => $transaction['expires_on'] ?? date('Y-m-d H:i:s', strtotime('+' . $package['duration_length'] . ' ' . $package['duration_unit']))]
+            'subscription' => [
+                'expires_on' => $transaction['expires_on'] ?? date('Y-m-d H:i:s', strtotime('+' . $package['duration_length'] . ' ' . $package['duration_unit']))
+            ]
         ]);
     }
 
+    /**
+     * Pending page
+     */
     public function pending($checkoutRequestID = null)
     {
         if (!$checkoutRequestID) return redirect()->to('/client/dashboard')->with('error', 'Invalid transaction reference.');
@@ -276,6 +209,9 @@ class Payments extends BaseController
         return view('client/payments/pending', ['checkoutRequestID' => $checkoutRequestID]);
     }
 
+    /**
+     * Check payment status via Ajax
+     */
     public function checkStatus()
     {
         $clientId = session()->get('client_id');
@@ -303,46 +239,37 @@ class Payments extends BaseController
         return $this->response->setJSON(['status' => 'pending']);
     }
 
+    /**
+     * Get transaction status by CheckoutRequestID
+     */
     public function status($checkoutRequestID)
     {
-        $mpesaTransactionModel = new \App\Models\MpesaTransactionModel();
-
-        $transaction = $mpesaTransactionModel
+        $transaction = $this->mpesaTransactionModel
             ->where('checkout_request_id', $checkoutRequestID)
             ->first();
 
-        if (!$transaction) {
-            return $this->response->setJSON(['status' => 'NotFound']);
-        }
+        if (!$transaction) return $this->response->setJSON(['status' => 'NotFound']);
 
         return $this->response->setJSON(['status' => $transaction['status']]);
     }
 
-
+    /**
+     * Calculate expiry datetime
+     */
     private function calculateExpiry($length, $unit)
     {
         $unit = strtolower(trim($unit));
         switch ($unit) {
             case 'minutes':
-            case 'minute':
-                $interval = "+$length minutes";
-                break;
+            case 'minute': $interval = "+$length minutes"; break;
             case 'hours':
-            case 'hour':
-                $interval = "+$length hours";
-                break;
+            case 'hour': $interval = "+$length hours"; break;
             case 'days':
-            case 'day':
-                $interval = "+$length days";
-                break;
+            case 'day': $interval = "+$length days"; break;
             case 'months':
-            case 'month':
-                $interval = "+$length months";
-                break;
-            default:
-                $interval = "+$length days";
+            case 'month': $interval = "+$length months"; break;
+            default: $interval = "+$length days";
         }
-
         return date('Y-m-d H:i:s', strtotime($interval));
     }
 }
