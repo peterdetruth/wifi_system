@@ -169,10 +169,18 @@ class Payments extends BaseController
     /**
      * Waiting page
      */
-    public function waiting()
+    public function waiting($clientPackageId = null)
     {
-        return view('client/payments/waiting');
+        if (!$clientPackageId) {
+            return redirect()->to('/client/dashboard')
+                ->with('error', 'Invalid payment reference.');
+        }
+
+        return view('client/payments/waiting', [
+            'clientPackageId' => $clientPackageId
+        ]);
     }
+
 
     /**
      * Success page
@@ -261,14 +269,23 @@ class Payments extends BaseController
         $unit = strtolower(trim($unit));
         switch ($unit) {
             case 'minutes':
-            case 'minute': $interval = "+$length minutes"; break;
+            case 'minute':
+                $interval = "+$length minutes";
+                break;
             case 'hours':
-            case 'hour': $interval = "+$length hours"; break;
+            case 'hour':
+                $interval = "+$length hours";
+                break;
             case 'days':
-            case 'day': $interval = "+$length days"; break;
+            case 'day':
+                $interval = "+$length days";
+                break;
             case 'months':
-            case 'month': $interval = "+$length months"; break;
-            default: $interval = "+$length days";
+            case 'month':
+                $interval = "+$length months";
+                break;
+            default:
+                $interval = "+$length days";
         }
         return date('Y-m-d H:i:s', strtotime($interval));
     }
