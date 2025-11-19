@@ -1,76 +1,92 @@
-document.addEventListener('DOMContentLoaded', function() {
-    const payButtons = document.querySelectorAll('.pay-now-btn');
-
-    payButtons.forEach(button => {
-        button.addEventListener('click', function() {
-            const card = this.closest('.package-card');
-            const form = card.querySelector('.pay-now-form');
-
-            // Hide other forms
-            document.querySelectorAll('.pay-now-form').forEach(f => {
-                if (f !== form) f.style.display = 'none';
-            });
-
-            form.style.display = form.style.display === 'none' ? 'block' : 'none';
+document.addEventListener('DOMContentLoaded', function () {
+    // Toggle package forms when clicking "Pay Now"
+    const toggleButtons = document.querySelectorAll('.toggle-form');
+    toggleButtons.forEach(btn => {
+        btn.addEventListener('click', function () {
+            const packageId = btn.dataset.packageId;
+            const form = document.getElementById('package-form-' + packageId);
+            if (form) {
+                form.classList.toggle('d-none');
+                form.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            }
         });
     });
 
-    // Handle AJAX form submission
-    const forms = document.querySelectorAll('.pay-now-form');
+    // Handle package form submissions
+    const forms = document.querySelectorAll('.package-form form');
     forms.forEach(form => {
-        form.addEventListener('submit', function(e) {
+        form.addEventListener('submit', async function (e) {
             e.preventDefault();
-            const card = this.closest('.package-card');
-            const statusDiv = card.querySelector('.payment-status');
-            const formData = new FormData(this);
+            const packageId = this.querySelector('input[name="package_id"]').value;
+            const phoneInput = this.querySelector('input[name="phone"]');
+            const phone = phoneInput.value.trim();
 
-            statusDiv.style.display = 'block';
-            statusDiv.innerHTML = 'Initiating payment... Please wait.';
+            // Status div
+            let statusDiv = this.querySelector('.status-message');
+            if (!statusDiv) {
+                statusDiv = document.createElement('div');
+                statusDiv.classList.add('status-message', 'mt-2');
+                this.appendChild(statusDiv);
+            }
 
-            fetch(this.action, {
-                method: 'POST',
-                body: formData,
-                credentials: 'same-origin'
-            })
-            .then(response => response.text())
-            .then(html => {
-                // Replace the form with the waiting page
-                this.style.display = 'none';
-                statusDiv.innerHTML = html;
+            if (!phone) {
+                statusDiv.innerHTML = '<span class="text-danger">Please enter your phone number.</span>';
+                phoneInput.focus();
+                return;
+            }
 
-                // Poll the M-PESA status
-                const clientPackageId = html.match(/clientPackageId.*?(\d+)/);
-                if (clientPackageId) {
-                    pollPaymentStatus(clientPackageId[1], statusDiv);
-                }
-            })
-            .catch(err => {
-                statusDiv.innerHTML = 'Error initiating payment: ' + err;
-            });
+            statusDiv.innerHTML = '<span class="text-info">Processing your payment...</span>';
+
+            try {
+                const formData = new FormData();
+                formData.append('package_id', packageId);
+                formData.append('phone', phone);
+
+                const response = await fetch('/client/payments/process', {
+                    method: 'POST',
+                    body: formData
+                });
+
+                const html = await response.text();
+                // Replace the package card body with waiting view
+                this.closest('.card-body').innerHTML = html;
+
+                // Start polling payment status
+                pollPaymentStatus(packageId);
+            } catch (err) {
+                console.error(err);
+                statusDiv.innerHTML = '<span class="text-danger">Payment initiation failed.</span>';
+            }
         });
     });
 
-    function pollPaymentStatus(clientPackageId, statusDiv) {
-        const interval = setInterval(() => {
-            fetch('/client/payments/checkStatus', {
-                method: 'POST',
-                credentials: 'same-origin'
-            })
-            .then(resp => resp.json())
-            .then(data => {
+    // Polling function for M-PESA transaction status
+    function pollPaymentStatus(clientPackageId) {
+        const interval = setInterval(async () => {
+            try {
+                const res = await fetch('/client/payments/checkStatus');
+                const data = await res.json();
+
                 if (data.status === 'success') {
                     clearInterval(interval);
-                    statusDiv.innerHTML = '✅ Payment successful! Subscription activated.';
-                } else if (data.status === 'failed') {
-                    clearInterval(interval);
-                    statusDiv.innerHTML = '❌ Payment failed. Please try again.';
-                } else {
-                    statusDiv.innerHTML = '⏳ Waiting for M-PESA confirmation...';
+                    // redirect to success page
+                    window.location.href = '/client/payments/success/' + data.transaction_id;
                 }
-            })
-            .catch(() => {
-                statusDiv.innerHTML = '❌ Error checking payment status.';
-            });
-        }, 5000);
+            } catch (err) {
+                console.error(err);
+            }
+        }, 3000); // every 3 seconds
     }
+
+    // Bootstrap form validation
+    const validationForms = document.querySelectorAll('.needs-validation');
+    Array.prototype.slice.call(validationForms).forEach(function (form) {
+        form.addEventListener('submit', function (event) {
+            if (!form.checkValidity()) {
+                event.preventDefault();
+                event.stopPropagation();
+            }
+            form.classList.add('was-validated');
+        }, false);
+    });
 });

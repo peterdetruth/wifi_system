@@ -1,57 +1,58 @@
-<!DOCTYPE html>
-<html lang="en">
+<?= $this->extend('layouts/main') ?>
+<?= $this->section('content') ?>
 
-<head>
-    <meta charset="UTF-8">
-    <title>Purchase Packages</title>
-    <link rel="stylesheet" href="<?= base_url('assets/css/home.css') ?>">
-</head>
-
-<body>
-    <div class="container">
-        <header>
-            <h1>Purchase Your Hotspot Package</h1>
-            <p>Follow the steps below to complete your purchase:</p>
-            <ol class="purchase-guide">
-                <li>Tap on your preferred package</li>
-                <li>Enter your phone number</li>
-                <li>Click <strong>PAY NOW</strong></li>
-                <li>Enter M-PESA PIN and wait ~30 seconds for authentication</li>
-            </ol>
-        </header>
-
-        <section class="packages">
-            <?php if (!empty($packages)) : ?>
-                <?php foreach ($packages as $package) : ?>
-                    <div class="package-card" data-package-id="<?= esc($package['id']) ?>">
-                        <h2><?= esc($package['name']) ?></h2>
-                        <p class="package-price">$<?= number_format($package['price'], 2) ?></p>
-                        <p class="package-details">
-                            Duration: <?= esc($package['duration_length'] . ' ' . $package['duration_unit']) ?><br>
-                            Validity: <?= esc($package['validity_days']) ?> days<br>
-                            Bandwidth: <?= esc($package['bandwidth_value']) . ' ' . esc($package['bandwidth_unit']) ?><br>
-                            <?= esc($package['hotspot_plan_type']) ?> plan
-                        </p>
-                        <button class="pay-now-btn">PAY NOW</button>
-
-                        <form class="pay-now-form" action="<?= site_url('/client/payments/process') ?>" method="POST" style="display: none;">
-                            <input type="hidden" name="package_id" value="<?= esc($package['id']) ?>">
-                            <label>Phone Number:
-                                <input type="text" name="phone" placeholder="Enter your phone number" required>
-                            </label>
-                            <button type="submit">Submit Payment</button>
-                        </form>
-
-                        <div class="payment-status" style="display:none;"></div>
-                    </div>
-                <?php endforeach; ?>
-            <?php else : ?>
-                <p>No packages available at the moment.</p>
-            <?php endif; ?>
-        </section>
+<div class="container my-5">
+    <!-- How to purchase guide -->
+    <div class="row mb-4">
+        <div class="col-12">
+            <div class="alert alert-info">
+                <h4>How to Purchase</h4>
+                <ol class="mb-0">
+                    <li>Tap on your preferred package</li>
+                    <li>Enter your phone number</li>
+                    <li>Click <strong>PAY NOW</strong></li>
+                    <li>Enter your M-PESA PIN and wait up to 30 seconds for authentication</li>
+                </ol>
+            </div>
+        </div>
     </div>
 
-    <script src="<?= base_url('assets/js/home.js') ?>"></script>
-</body>
+    <!-- Packages display -->
+    <div class="row">
+        <?php foreach ($packages as $package) : ?>
+            <div class="col-md-4 mb-4">
+                <div class="card h-100 shadow-sm">
+                    <div class="card-body">
+                        <h5 class="card-title"><?= esc($package['name']) ?></h5>
+                        <p class="card-text">
+                            <strong>Price:</strong> $<?= esc($package['price']) ?><br>
+                            <strong>Duration:</strong> <?= esc($package['duration_length'] . ' ' . $package['duration_unit']) ?><br>
+                            <strong>Bandwidth:</strong> <?= esc($package['bandwidth_value'] . ' ' . $package['bandwidth_unit']) ?><br>
+                            <strong>Plan Type:</strong> <?= esc($package['hotspot_plan_type'] ?? 'N/A') ?>
+                        </p>
 
-</html>
+                        <button type="button" class="btn btn-primary toggle-form" data-package-id="<?= esc($package['id']) ?>">
+                            Pay Now
+                        </button>
+
+                        <!-- Hidden form -->
+                        <div id="package-form-<?= esc($package['id']) ?>" class="package-form mt-3 d-none">
+                            <form class="needs-validation" novalidate>
+                                <input type="hidden" name="package_id" value="<?= esc($package['id']) ?>">
+                                <div class="mb-2">
+                                    <label for="phone-<?= esc($package['id']) ?>" class="form-label">Phone Number</label>
+                                    <input type="text" class="form-control" id="phone-<?= esc($package['id']) ?>" name="phone" required>
+                                    <div class="invalid-feedback">Phone number is required.</div>
+                                </div>
+                                <button type="submit" class="btn btn-success w-100">Pay Now</button>
+                                <div class="status-message mt-2"></div>
+                            </form>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        <?php endforeach; ?>
+    </div>
+</div>
+
+<?= $this->endSection() ?>
