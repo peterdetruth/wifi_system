@@ -6,10 +6,10 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
   <!-- Bootstrap 5 -->
-  <link href="<?= base_url('assets/css/bootstrap.min.css') ?>" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.8/dist/css/bootstrap.min.css">
 
   <!-- Bootstrap Icons -->
-  <link href="<?= base_url('assets/css/bootstrap-icons.css') ?>" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css">
 
   <style>
     body {
@@ -61,6 +61,6 @@
   &copy; <?= date('Y') ?> WiFi Management System. All rights reserved.
 </footer>
 
-<script src="<?= base_url('assets/js/bootstrap.bundle.min.js') ?>"></script>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.8/dist/js/bootstrap.bundle.min.js"></script>
 </body>
 </html>

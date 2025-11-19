@@ -37,17 +37,11 @@ class Payments extends BaseController
 
         helper(['form', 'url', 'text']);
 
-        // Custom logger
         $this->mpesaLogger = new MpesaLogger();
-
-        // Services
         $this->activationService = new ActivationService($this->mpesaLogger);
         $this->mpesaService = new MpesaService($this->mpesaLogger);
     }
 
-    /**
-     * Show checkout page
-     */
     public function checkout($packageId)
     {
         $clientId = session()->get('client_id');
@@ -59,9 +53,6 @@ class Payments extends BaseController
         return view('client/payments/checkout', ['package' => $package]);
     }
 
-    /**
-     * Process payment or voucher redemption
-     */
     public function process()
     {
         helper(['mpesa_debug']);
@@ -131,6 +122,7 @@ class Payments extends BaseController
 
             $db->table('client_packages')->insert($subscriptionData);
             $clientPackageId = $db->insertID();
+
             $db->transComplete();
 
             if ($db->transStatus() === false) {
@@ -141,14 +133,11 @@ class Payments extends BaseController
 
             mpesa_debug("🔹 Pending client_packages row created: {$clientPackageId}");
 
-            // Initiate M-PESA transaction
             $success = $this->mpesaService->initiateTransaction(
                 $clientId,
                 $packageId,
                 $amount,
-                $phone,
-                null,
-                null
+                $phone
             );
 
             if (!$success) throw new \Exception("Failed to initiate M-PESA transaction.");
@@ -166,9 +155,6 @@ class Payments extends BaseController
         }
     }
 
-    /**
-     * Waiting page
-     */
     public function waiting($clientPackageId = null)
     {
         if (!$clientPackageId) {
@@ -176,15 +162,9 @@ class Payments extends BaseController
                 ->with('error', 'Invalid payment reference.');
         }
 
-        return view('client/payments/waiting', [
-            'clientPackageId' => $clientPackageId
-        ]);
+        return view('client/payments/waiting', ['clientPackageId' => $clientPackageId]);
     }
 
-
-    /**
-     * Success page
-     */
     public function success($transactionId)
     {
         $clientId = session()->get('client_id');
@@ -207,9 +187,6 @@ class Payments extends BaseController
         ]);
     }
 
-    /**
-     * Pending page
-     */
     public function pending($checkoutRequestID = null)
     {
         if (!$checkoutRequestID) return redirect()->to('/client/dashboard')->with('error', 'Invalid transaction reference.');
@@ -217,9 +194,6 @@ class Payments extends BaseController
         return view('client/payments/pending', ['checkoutRequestID' => $checkoutRequestID]);
     }
 
-    /**
-     * Check payment status via Ajax
-     */
     public function checkStatus()
     {
         $clientId = session()->get('client_id');
@@ -247,9 +221,6 @@ class Payments extends BaseController
         return $this->response->setJSON(['status' => 'pending']);
     }
 
-    /**
-     * Get transaction status by CheckoutRequestID
-     */
     public function status($checkoutRequestID)
     {
         $transaction = $this->mpesaTransactionModel
@@ -261,29 +232,18 @@ class Payments extends BaseController
         return $this->response->setJSON(['status' => $transaction['status']]);
     }
 
-    /**
-     * Calculate expiry datetime
-     */
     private function calculateExpiry($length, $unit)
     {
         $unit = strtolower(trim($unit));
         switch ($unit) {
-            case 'minutes':
-            case 'minute':
-                $interval = "+$length minutes";
-                break;
-            case 'hours':
-            case 'hour':
-                $interval = "+$length hours";
-                break;
-            case 'days':
-            case 'day':
-                $interval = "+$length days";
-                break;
-            case 'months':
-            case 'month':
-                $interval = "+$length months";
-                break;
+            case 'minutes': case 'minute':
+                $interval = "+$length minutes"; break;
+            case 'hours': case 'hour':
+                $interval = "+$length hours"; break;
+            case 'days': case 'day':
+                $interval = "+$length days"; break;
+            case 'months': case 'month':
+                $interval = "+$length months"; break;
             default:
                 $interval = "+$length days";
         }
