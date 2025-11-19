@@ -6,12 +6,17 @@ use App\Models\PackageModel;
 
 class Home extends BaseController
 {
+    protected PackageModel $packageModel;
+
+    public function __construct()
+    {
+        $this->packageModel = new PackageModel();
+        helper(['form', 'url']);
+    }
+
     public function index(): string
     {
-        $packageModel = new PackageModel();
-        $packages = $packageModel->findAll();
-
-        return view('home', ['packages' => $packages]);
+        $packages = $this->packageModel->findAll();
+        return view('home/index', ['packages' => $packages]);
     }
 }
-

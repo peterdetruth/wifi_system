@@ -1,17 +1,18 @@
-document.addEventListener('DOMContentLoaded', () => {
-    const packageCards = document.querySelectorAll('.package-card');
+document.addEventListener('DOMContentLoaded', function () {
+    const packages = document.querySelectorAll('.package');
 
-    packageCards.forEach(card => {
-        card.addEventListener('click', (e) => {
-            // Avoid toggling when clicking inside the form inputs
-            if (e.target.tagName === 'INPUT' || e.target.tagName === 'BUTTON') return;
+    packages.forEach(pkg => {
+        const btn = pkg.querySelector('.buy-now-btn');
+        const form = pkg.querySelector('.payment-form');
 
-            const form = card.querySelector('.payment-form');
-            if (form.style.display === 'none') {
-                form.style.display = 'block';
-            } else {
-                form.style.display = 'none';
-            }
+        btn.addEventListener('click', function () {
+            // Hide any other open forms
+            document.querySelectorAll('.payment-form').forEach(f => {
+                if (f !== form) f.style.display = 'none';
+            });
+
+            // Toggle current form
+            form.style.display = form.style.display === 'none' ? 'block' : 'none';
         });
     });
 });
