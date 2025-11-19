@@ -1,37 +1,25 @@
-document.addEventListener('DOMContentLoaded', function () {
-    // Toggle package forms when clicking "Pay Now"
-    const toggleButtons = document.querySelectorAll('.toggle-form');
-    toggleButtons.forEach(btn => {
+document.addEventListener('DOMContentLoaded', function() {
+
+    // Toggle package form
+    document.querySelectorAll('.toggle-form').forEach(btn => {
         btn.addEventListener('click', function () {
-            const packageId = btn.dataset.packageId;
-            const form = document.getElementById('package-form-' + packageId);
-            if (form) {
-                form.classList.toggle('d-none');
-                form.scrollIntoView({ behavior: 'smooth', block: 'start' });
-            }
+            const id = this.dataset.packageId;
+            document.getElementById('package-form-' + id).classList.toggle('d-none');
         });
     });
 
-    // Handle package form submissions
-    const forms = document.querySelectorAll('.package-form form');
-    forms.forEach(form => {
-        form.addEventListener('submit', async function (e) {
-            e.preventDefault();
-            const packageId = this.querySelector('input[name="package_id"]').value;
-            const phoneInput = this.querySelector('input[name="phone"]');
-            const phone = phoneInput.value.trim();
 
-            // Status div
-            let statusDiv = this.querySelector('.status-message');
-            if (!statusDiv) {
-                statusDiv = document.createElement('div');
-                statusDiv.classList.add('status-message', 'mt-2');
-                this.appendChild(statusDiv);
-            }
+    // Handle package payments
+    document.querySelectorAll('.ajax-package-form').forEach(form => {
+        form.addEventListener('submit', async function(e) {
+            e.preventDefault();
+
+            const packageId = this.dataset.packageId;
+            const phone = this.querySelector('input[name="phone"]').value.trim();
+            const statusDiv = document.getElementById('status-' + packageId);
 
             if (!phone) {
                 statusDiv.innerHTML = '<span class="text-danger">Please enter your phone number.</span>';
-                phoneInput.focus();
                 return;
             }
 
@@ -48,11 +36,13 @@ document.addEventListener('DOMContentLoaded', function () {
                 });
 
                 const html = await response.text();
-                // Replace the package card body with waiting view
-                this.closest('.card-body').innerHTML = html;
 
-                // Start polling payment status
-                pollPaymentStatus(packageId);
+                // Replace card area with waiting screen
+                this.parentElement.innerHTML = html;
+
+                // Start polling
+                pollPaymentStatus(statusDiv);
+                
             } catch (err) {
                 console.error(err);
                 statusDiv.innerHTML = '<span class="text-danger">Payment initiation failed.</span>';
@@ -60,33 +50,64 @@ document.addEventListener('DOMContentLoaded', function () {
         });
     });
 
-    // Polling function for M-PESA transaction status
-    function pollPaymentStatus(clientPackageId) {
-        const interval = setInterval(async () => {
+
+
+    // Payment polling
+    function pollPaymentStatus(statusDiv) {
+        const timer = setInterval(async () => {
             try {
                 const res = await fetch('/client/payments/checkStatus');
                 const data = await res.json();
 
                 if (data.status === 'success') {
-                    clearInterval(interval);
-                    // redirect to success page
+                    clearInterval(timer);
                     window.location.href = '/client/payments/success/' + data.transaction_id;
                 }
+
             } catch (err) {
                 console.error(err);
             }
-        }, 3000); // every 3 seconds
+        }, 3000);
     }
 
-    // Bootstrap form validation
-    const validationForms = document.querySelectorAll('.needs-validation');
-    Array.prototype.slice.call(validationForms).forEach(function (form) {
-        form.addEventListener('submit', function (event) {
-            if (!form.checkValidity()) {
-                event.preventDefault();
-                event.stopPropagation();
+
+    // Voucher Redeem AJAX
+    const voucherForm = document.getElementById('voucher-redeem-form');
+    const voucherStatus = document.getElementById('voucher-status');
+
+    voucherForm.addEventListener('submit', async function(e) {
+        e.preventDefault();
+
+        const code = document.getElementById('voucher').value.trim();
+        if (!code) {
+            voucherStatus.innerHTML = '<span class="text-danger">Enter a voucher code.</span>';
+            return;
+        }
+
+        voucherStatus.innerHTML = '<span class="text-info">Checking voucher...</span>';
+
+        try {
+            const formData = new FormData();
+            formData.append('voucher_code', code);
+
+            const res = await fetch('/client/vouchers/redeem-post', {
+                method: 'POST',
+                body: formData
+            });
+
+            const result = await res.json();
+
+            if (result.status === 'success') {
+                voucherStatus.innerHTML = '<span class="text-success">' + result.message + '</span>';
+                setTimeout(() => window.location.href = '/client/subscriptions', 1500);
+            } else {
+                voucherStatus.innerHTML = '<span class="text-danger">' + result.message + '</span>';
             }
-            form.classList.add('was-validated');
-        }, false);
+
+        } catch (err) {
+            console.error(err);
+            voucherStatus.innerHTML = '<span class="text-danger">Redeem failed. Try again.</span>';
+        }
     });
+
 });

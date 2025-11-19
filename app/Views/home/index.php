@@ -2,7 +2,8 @@
 <?= $this->section('content') ?>
 
 <div class="container my-5">
-    <!-- How to purchase guide -->
+
+    <!-- How to Purchase -->
     <div class="row mb-4">
         <div class="col-12">
             <div class="alert alert-info">
@@ -11,13 +12,13 @@
                     <li>Tap on your preferred package</li>
                     <li>Enter your phone number</li>
                     <li>Click <strong>PAY NOW</strong></li>
-                    <li>Enter your M-PESA PIN and wait up to 30 seconds for authentication</li>
+                    <li>Enter your M-PESA PIN and wait up to 30 seconds</li>
                 </ol>
             </div>
         </div>
     </div>
 
-    <!-- Packages display -->
+    <!-- Packages -->
     <div class="row">
         <?php foreach ($packages as $package) : ?>
             <div class="col-md-4 mb-4">
@@ -25,27 +26,29 @@
                     <div class="card-body">
                         <h5 class="card-title"><?= esc($package['name']) ?></h5>
                         <p class="card-text">
-                            <strong>Price:</strong> $<?= esc($package['price']) ?><br>
+                            <strong>Price:</strong> KES <?= esc($package['price']) ?><br>
                             <strong>Duration:</strong> <?= esc($package['duration_length'] . ' ' . $package['duration_unit']) ?><br>
                             <strong>Bandwidth:</strong> <?= esc($package['bandwidth_value'] . ' ' . $package['bandwidth_unit']) ?><br>
-                            <strong>Plan Type:</strong> <?= esc($package['hotspot_plan_type'] ?? 'N/A') ?>
                         </p>
 
-                        <button type="button" class="btn btn-primary toggle-form" data-package-id="<?= esc($package['id']) ?>">
+                        <button type="button" class="btn btn-primary toggle-form"
+                                data-package-id="<?= esc($package['id']) ?>">
                             Pay Now
                         </button>
 
-                        <!-- Hidden form -->
+                        <!-- Hidden AJAX form -->
                         <div id="package-form-<?= esc($package['id']) ?>" class="package-form mt-3 d-none">
-                            <form class="needs-validation" novalidate>
+                            <form class="ajax-package-form" data-package-id="<?= esc($package['id']) ?>">
                                 <input type="hidden" name="package_id" value="<?= esc($package['id']) ?>">
+
                                 <div class="mb-2">
-                                    <label for="phone-<?= esc($package['id']) ?>" class="form-label">Phone Number</label>
-                                    <input type="text" class="form-control" id="phone-<?= esc($package['id']) ?>" name="phone" required>
-                                    <div class="invalid-feedback">Phone number is required.</div>
+                                    <label class="form-label">Phone Number</label>
+                                    <input type="text" name="phone" class="form-control" required>
                                 </div>
+
                                 <button type="submit" class="btn btn-success w-100">Pay Now</button>
-                                <div class="status-message mt-2"></div>
+
+                                <div id="status-<?= esc($package['id']) ?>" class="mt-2 text-center"></div>
                             </form>
                         </div>
                     </div>
@@ -53,6 +56,37 @@
             </div>
         <?php endforeach; ?>
     </div>
+
+
+    <!-- Voucher Redeem Section -->
+    <div class="row mt-5">
+        <div class="col-md-6 offset-md-3">
+
+            <div class="card shadow-sm">
+                <div class="card-body">
+
+                    <h4>Redeem Voucher</h4>
+                    <p>Enter your voucher code below to activate your package instantly.</p>
+
+                    <form id="voucher-redeem-form">
+                        <div class="mb-3">
+                            <label for="voucher" class="form-label">Voucher Code</label>
+                            <input type="text" class="form-control" name="voucher_code" id="voucher" required>
+                        </div>
+
+                        <button type="submit" class="btn btn-success w-100">
+                            Redeem Voucher
+                        </button>
+
+                        <div id="voucher-status" class="mt-3 text-center"></div>
+                    </form>
+
+                </div>
+            </div>
+
+        </div>
+    </div>
+
 </div>
 
 <?= $this->endSection() ?>
