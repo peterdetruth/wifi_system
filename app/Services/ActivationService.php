@@ -9,9 +9,9 @@ class ActivationService
     protected MpesaLogger $logger;
     protected $db;
 
-    public function __construct(MpesaLogger $logger)
+    public function __construct(?MpesaLogger $logger = null)
     {
-        $this->logger = $logger;
+        $this->logger = $logger ?? new MpesaLogger();
         $this->db = Database::connect();
     }
 

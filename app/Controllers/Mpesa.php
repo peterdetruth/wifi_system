@@ -45,8 +45,7 @@ class Mpesa extends BaseController
         string $phone,
         ?string $merchantRequestId = null,
         ?string $checkoutRequestId = null
-    )
-    {
+    ) {
         // Call MpesaService with all required arguments
         $success = $this->mpesaService->initiateTransaction(
             $clientId,
@@ -78,7 +77,6 @@ class Mpesa extends BaseController
             $response = $this->mpesaService->handleCallback($data);
 
             return $this->respond($response, 200);
-
         } catch (\Throwable $e) {
             return $this->failServerError($e->getMessage());
         }
