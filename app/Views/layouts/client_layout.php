@@ -3,10 +3,10 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title><?= esc($title ?? 'Client Area') ?> | WiFi System</title>
+  <title><?= esc($title ?? 'Client Area') ?> | UniWiPay</title>
 
   <!-- Bootstrap CSS -->
-  <link href="<?= base_url('assets/css/bootstrap.min.css') ?>" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.8/dist/css/bootstrap.min.css" integrity="sha384-SgOJa3DmI69IUzQ2PVdRZhwQ+dy64/BUtbMJw1MZ8t5HZApcHrRKUc4W0kG879m7" crossorigin="anonymous">
 
   <!-- Custom stylesheet (reuse or separate) -->
   <link href="<?= base_url('assets/css/style.css') ?>" rel="stylesheet">
@@ -16,7 +16,7 @@
   <!-- Navbar -->
   <nav class="navbar navbar-expand-lg navbar-dark bg-primary">
     <div class="container-fluid">
-      <a class="navbar-brand" href="<?= base_url('/client/dashboard') ?>">WiFi System</a>
+      <a class="navbar-brand" href="<?= base_url('/client/dashboard') ?>">UniWiPay</a>
 
       <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
         <span class="navbar-toggler-icon"></span>
@@ -65,6 +65,6 @@
   </main>
 
   <!-- Bootstrap JS -->
-  <script src="<?= base_url('assets/js/bootstrap.bundle.min.js') ?>"></script>
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.8/dist/js/bootstrap.bundle.min.js" integrity="sha384-YvpcrYf0tY3lHB60NNkmXc5s9fDVZLESaAA55NDzOxhy9GkcIdslK1eN7N6jIeHz" crossorigin="anonymous"></script>
 </body>
 </html>
