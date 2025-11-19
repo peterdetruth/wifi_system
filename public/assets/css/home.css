@@ -1,48 +1,115 @@
 body {
-    font-family: Arial, sans-serif;
-    padding: 20px;
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    background-color: #f4f7f9;
+    margin: 0;
+    padding: 0;
 }
 
-.how-to-buy {
-    margin-bottom: 30px;
+.container {
+    max-width: 1200px;
+    margin: 40px auto;
+    padding: 0 20px;
+}
+
+header {
+    text-align: center;
+    margin-bottom: 40px;
+}
+
+header h1 {
+    font-size: 2.5rem;
+    color: #333;
+}
+
+.purchase-guide {
+    list-style-type: decimal;
+    margin: 20px 0 0;
+    padding-left: 20px;
+    font-size: 1.1rem;
+    color: #555;
 }
 
 .packages {
     display: flex;
     flex-wrap: wrap;
     gap: 20px;
+    justify-content: center;
 }
 
-.package {
-    border: 1px solid #ccc;
-    padding: 15px;
-    width: 250px;
-    border-radius: 5px;
+.package-card {
+    background-color: #fff;
+    border-radius: 10px;
+    box-shadow: 0 8px 16px rgba(0,0,0,0.1);
+    padding: 20px;
+    width: 280px;
+    transition: transform 0.2s ease;
 }
 
-.package h3 {
+.package-card:hover {
+    transform: translateY(-5px);
+}
+
+.package-card h2 {
     margin-top: 0;
+    color: #007BFF;
 }
 
-.payment-form {
-    margin-top: 10px;
+.package-price {
+    font-size: 1.5rem;
+    font-weight: bold;
+    margin: 10px 0;
 }
 
-.payment-form input[type="text"] {
-    width: 100%;
-    padding: 5px;
-    margin: 5px 0;
+.package-details {
+    font-size: 0.95rem;
+    color: #666;
+    margin-bottom: 15px;
 }
 
-.payment-form button {
+.pay-now-btn {
+    display: inline-block;
     background-color: #28a745;
     color: #fff;
     border: none;
-    padding: 7px 15px;
+    border-radius: 6px;
+    padding: 10px 20px;
     cursor: pointer;
-    border-radius: 3px;
+    font-size: 1rem;
+    transition: background-color 0.2s ease;
 }
 
-.payment-form button:hover {
+.pay-now-btn:hover {
     background-color: #218838;
+}
+
+.pay-now-form {
+    margin-top: 15px;
+}
+
+.pay-now-form label {
+    display: block;
+    margin-bottom: 10px;
+    font-size: 0.9rem;
+}
+
+.pay-now-form input[type="text"] {
+    width: 100%;
+    padding: 8px 10px;
+    border-radius: 6px;
+    border: 1px solid #ccc;
+    margin-top: 5px;
+}
+
+.pay-now-form button[type="submit"] {
+    background-color: #007BFF;
+    color: #fff;
+    border: none;
+    border-radius: 6px;
+    padding: 10px 20px;
+    cursor: pointer;
+    font-size: 1rem;
+}
+
+.pay-now-form button[type="submit"]:hover {
+    background-color: #0056b3;
 }

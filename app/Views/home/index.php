@@ -1,43 +1,57 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
-    <title>WiFi Packages</title>
+    <title>Purchase Packages</title>
     <link rel="stylesheet" href="<?= base_url('assets/css/home.css') ?>">
 </head>
+
 <body>
+    <div class="container">
+        <header>
+            <h1>Purchase Your Hotspot Package</h1>
+            <p>Follow the steps below to complete your purchase:</p>
+            <ol class="purchase-guide">
+                <li>Tap on your preferred package</li>
+                <li>Enter your phone number</li>
+                <li>Click <strong>PAY NOW</strong></li>
+                <li>Enter M-PESA PIN and wait ~30 seconds for authentication</li>
+            </ol>
+        </header>
 
-    <section class="how-to-buy">
-        <h2>How to Purchase</h2>
-        <ol>
-            <li>Tap on your preferred package</li>
-            <li>Enter your phone number</li>
-            <li>Click <strong>PAY NOW</strong></li>
-            <li>Enter M-PESA PIN and wait for 30 seconds for M-PESA authentication</li>
-        </ol>
-    </section>
+        <section class="packages">
+            <?php if (!empty($packages)) : ?>
+                <?php foreach ($packages as $package) : ?>
+                    <div class="package-card" data-package-id="<?= esc($package['id']) ?>">
+                        <h2><?= esc($package['name']) ?></h2>
+                        <p class="package-price">$<?= number_format($package['price'], 2) ?></p>
+                        <p class="package-details">
+                            Duration: <?= esc($package['duration_length'] . ' ' . $package['duration_unit']) ?><br>
+                            Validity: <?= esc($package['validity_days']) ?> days<br>
+                            Bandwidth: <?= esc($package['bandwidth_value']) . ' ' . esc($package['bandwidth_unit']) ?><br>
+                            <?= esc($package['hotspot_plan_type']) ?> plan
+                        </p>
+                        <button class="pay-now-btn">PAY NOW</button>
 
-    <section class="packages">
-        <h2>Available Packages</h2>
-        <div class="package-list">
-            <?php foreach ($packages as $package): ?>
-                <div class="package" data-package-id="<?= $package['id'] ?>">
-                    <h3><?= esc($package['name']) ?> - $<?= number_format($package['price'], 2) ?></h3>
-                    <p><?= esc($package['duration_length'] . ' ' . $package['duration_unit']) ?> | Validity: <?= esc($package['validity_days']) ?> days</p>
-                    <button class="buy-now-btn">Select Package</button>
+                        <form class="pay-now-form" action="<?= site_url('/client/payments/process') ?>" method="POST" style="display: none;">
+                            <input type="hidden" name="package_id" value="<?= esc($package['id']) ?>">
+                            <label>Phone Number:
+                                <input type="text" name="phone" placeholder="Enter your phone number" required>
+                            </label>
+                            <button type="submit">Submit Payment</button>
+                        </form>
 
-                    <form class="payment-form" method="POST" action="<?= base_url('/client/payments/process') ?>" style="display:none;">
-                        <input type="hidden" name="package_id" value="<?= $package['id'] ?>">
-                        <label>Phone Number:
-                            <input type="text" name="phone" placeholder="Enter your phone number" required>
-                        </label>
-                        <button type="submit">PAY NOW</button>
-                    </form>
-                </div>
-            <?php endforeach; ?>
-        </div>
-    </section>
+                        <div class="payment-status" style="display:none;"></div>
+                    </div>
+                <?php endforeach; ?>
+            <?php else : ?>
+                <p>No packages available at the moment.</p>
+            <?php endif; ?>
+        </section>
+    </div>
 
     <script src="<?= base_url('assets/js/home.js') ?>"></script>
 </body>
+
 </html>
