@@ -87,6 +87,45 @@
         </div>
     </div>
 
+
+    <!-- Reconnect Using M-PESA Code -->
+    <div class="row mt-4">
+        <div class="col-md-6 offset-md-3">
+
+            <div class="card shadow-sm">
+                <div class="card-body">
+
+                    <h4>Reconnect Using M-PESA Code</h4>
+
+                    <p class="text-muted">
+                        Enter M-PESA code below from the payment you made (<strong>e.g. TKK00APFAV</strong>)
+                    </p>
+
+                    <form id="reconnect-form">
+                        <div class="mb-3">
+                            <label class="form-label">M-PESA Code</label>
+                            <input type="text" class="form-control" name="mpesa_code" required>
+                        </div>
+
+                        <button type="submit" class="btn btn-primary w-100">
+                            Reconnect
+                        </button>
+                    </form>
+
+                </div>
+            </div>
+
+        </div>
+    </div>
+
 </div>
+
+<!-- Simple JS popup -->
+<script>
+document.getElementById('reconnect-form').addEventListener('submit', function(e) {
+    e.preventDefault();
+    alert('This feature will be available after completing the M-PESA transactions feature.');
+});
+</script>
 
 <?= $this->endSection() ?>
