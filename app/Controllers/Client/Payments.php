@@ -92,6 +92,7 @@ class Payments extends BaseController
                 $this->voucherModel->markAsUsed($voucherCode, $clientId);
 
                 mpesa_debug("✅ Voucher successfully redeemed for {$clientUsername}.");
+                // Use transaction ID 0 to indicate voucher redemption
                 return redirect()->to('/client/payments/success/0')
                     ->with('success', 'Voucher redeemed successfully! Subscription activated.');
             } catch (\Throwable $e) {
@@ -170,19 +171,38 @@ class Payments extends BaseController
         $clientId = session()->get('client_id');
         if (!$clientId) return redirect()->to('/client/login');
 
-        $transaction = $this->transactionModel
-            ->where('id', $transactionId)
-            ->where('client_id', $clientId)
-            ->first();
+        $transaction = null;
+        $package = null;
 
-        if (!$transaction) return redirect()->to('/client/dashboard')->with('error', 'Transaction not found.');
+        if ($transactionId > 0) {
+            $transaction = $this->transactionModel
+                ->where('id', $transactionId)
+                ->where('client_id', $clientId)
+                ->first();
+        }
 
-        $package = $this->packageModel->find($transaction['package_id']);
+        if ($transaction) {
+            $package = $this->packageModel->find($transaction['package_id']);
+            $expiresOn = $transaction['expires_on'] ?? date('Y-m-d H:i:s', strtotime('+' . $package['duration_length'] . ' ' . $package['duration_unit']));
+        } else {
+            // Fallback: use last activated subscription
+            $clientPackage = $this->subscriptionModel
+                ->where('client_id', $clientId)
+                ->orderBy('id', 'DESC')
+                ->first();
+
+            if ($clientPackage) {
+                $package = $this->packageModel->find($clientPackage['package_id']);
+                $expiresOn = $clientPackage['expires_on'] ?? date('Y-m-d H:i:s', strtotime('+' . $package['duration_length'] . ' ' . $package['duration_unit']));
+            } else {
+                return redirect()->to('/client/dashboard')->with('error', 'Transaction not found.');
+            }
+        }
 
         return view('client/payments/success', [
             'package' => $package,
             'subscription' => [
-                'expires_on' => $transaction['expires_on'] ?? date('Y-m-d H:i:s', strtotime('+' . $package['duration_length'] . ' ' . $package['duration_unit']))
+                'expires_on' => $expiresOn
             ]
         ]);
     }
@@ -214,7 +234,7 @@ class Payments extends BaseController
 
             return $this->response->setJSON([
                 'status' => 'success',
-                'transaction_id' => $transaction['id']
+                'transaction_id' => $transaction['id'] ?? 0
             ]);
         }
 

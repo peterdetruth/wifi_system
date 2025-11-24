@@ -8,7 +8,6 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     });
 
-
     // Handle package payments
     document.querySelectorAll('.ajax-package-form').forEach(form => {
         form.addEventListener('submit', async function(e) {
@@ -40,17 +39,15 @@ document.addEventListener('DOMContentLoaded', function() {
                 // Replace card area with waiting screen
                 this.parentElement.innerHTML = html;
 
-                // Start polling
+                // Start polling for payment/voucher status
                 pollPaymentStatus(statusDiv);
-                
+
             } catch (err) {
                 console.error(err);
                 statusDiv.innerHTML = '<span class="text-danger">Payment initiation failed.</span>';
             }
         });
     });
-
-
 
     // Payment polling
     function pollPaymentStatus(statusDiv) {
@@ -61,54 +58,60 @@ document.addEventListener('DOMContentLoaded', function() {
 
                 if (data.status === 'success') {
                     clearInterval(timer);
-                    window.location.href = '/client/payments/success/' + data.transaction_id;
+                    // Redirect to success page
+                    // If transaction_id is 0 (voucher redemption), still redirect correctly
+                    const transactionId = data.transaction_id || 0;
+                    window.location.href = '/client/payments/success/' + transactionId;
+                } else if (data.status === 'unauthorized') {
+                    clearInterval(timer);
+                    statusDiv.innerHTML = '<span class="text-danger">You are not logged in.</span>';
                 }
 
             } catch (err) {
                 console.error(err);
             }
-        }, 3000);
+        }, 3000); // every 3 seconds
     }
-
 
     // Voucher Redeem AJAX
     const voucherForm = document.getElementById('voucher-redeem-form');
-    const voucherStatus = document.getElementById('voucher-status');
+    if (voucherForm) {
+        const voucherStatus = document.getElementById('voucher-status');
 
-    voucherForm.addEventListener('submit', async function(e) {
-        e.preventDefault();
+        voucherForm.addEventListener('submit', async function(e) {
+            e.preventDefault();
 
-        const code = document.getElementById('voucher').value.trim();
-        if (!code) {
-            voucherStatus.innerHTML = '<span class="text-danger">Enter a voucher code.</span>';
-            return;
-        }
-
-        voucherStatus.innerHTML = '<span class="text-info">Checking voucher...</span>';
-
-        try {
-            const formData = new FormData();
-            formData.append('voucher_code', code);
-
-            const res = await fetch('/client/vouchers/redeem-post', {
-                method: 'POST',
-                body: formData
-            });
-
-            const result = await res.json();
-
-            if (result.status === 'success') {
-                voucherStatus.innerHTML = '<span class="text-success">' + result.message + '</span>';
-                setTimeout(() => window.location.href = '/client/subscriptions', 1500);
-            } else {
-                voucherStatus.innerHTML = '<span class="text-danger">' + result.message + '</span>';
+            const code = document.getElementById('voucher').value.trim();
+            if (!code) {
+                voucherStatus.innerHTML = '<span class="text-danger">Enter a voucher code.</span>';
+                return;
             }
 
-        } catch (err) {
-            console.error(err);
-            voucherStatus.innerHTML = '<span class="text-danger">Redeem failed. Try again.</span>';
-        }
-    });
+            voucherStatus.innerHTML = '<span class="text-info">Checking voucher...</span>';
+
+            try {
+                const formData = new FormData();
+                formData.append('voucher_code', code);
+
+                const res = await fetch('/client/vouchers/redeem-post', {
+                    method: 'POST',
+                    body: formData
+                });
+
+                const result = await res.json();
+
+                if (result.status === 'success') {
+                    voucherStatus.innerHTML = '<span class="text-success">' + result.message + '</span>';
+                    setTimeout(() => window.location.href = '/client/subscriptions', 1500);
+                } else {
+                    voucherStatus.innerHTML = '<span class="text-danger">' + result.message + '</span>';
+                }
+
+            } catch (err) {
+                console.error(err);
+                voucherStatus.innerHTML = '<span class="text-danger">Redeem failed. Try again.</span>';
+            }
+        });
+    }
 
 });
-2
