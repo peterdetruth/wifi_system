@@ -4,7 +4,6 @@ namespace App\Controllers;
 
 use App\Controllers\BaseController;
 use App\Models\ClientModel;
-use App\Models\TransactionModel;
 use App\Models\MpesaTransactionModel;
 use App\Models\VoucherModel;
 use App\Models\PackageModel;
@@ -15,52 +14,78 @@ class Dashboard extends BaseController
     public function index()
     {
         $clientModel = new ClientModel();
-        $txnModel = new TransactionModel();
         $mpesaModel = new MpesaTransactionModel();
         $voucherModel = new VoucherModel();
         $packageModel = new PackageModel();
         $subscriptionModel = new SubscriptionModel();
 
+        // Filters: month/year from GET, default to current
+        $month = (int) ($this->request->getGet('month') ?? date('m'));
+        $year  = (int) ($this->request->getGet('year') ?? date('Y'));
+
         // Metrics
-        $data['totalClients'] = $clientModel->countAllResults();
-        $data['totalPackages'] = $packageModel->countAllResults();
-        $data['totalVouchers'] = $voucherModel->countAllResults();
-        $data['totalTransactions'] = $txnModel->countAllResults();
+        $totalClients = $clientModel->countAllResults();
+        $totalPackages = $packageModel->countAllResults();
+        $activeSubscriptions = $subscriptionModel->where('status', 'active')->countAllResults();
 
-        // Active subscriptions
-        $data['activeSubscriptions'] = $subscriptionModel->where('status', 'active')->countAllResults();
+        // Total Revenue (only successful M-PESA transactions)
+        $totalRevenueRow = $mpesaModel
+            ->selectSum('amount')
+            ->where('result_code', 0)
+            ->where('MONTH(created_at)', $month)
+            ->where('YEAR(created_at)', $year)
+            ->first();
+        $totalRevenue = (float) ($totalRevenueRow['amount'] ?? 0);
 
-        // Recent data
-        $data['recentTransactions'] = $txnModel->orderBy('created_on', 'DESC')->limit(5)->findAll();
-        $data['recentClients'] = $clientModel->orderBy('created_at', 'DESC')->limit(5)->findAll();
-
-        // Chart Data: Transactions per day (last 7 days)
-        $chartData = $txnModel->select("DATE(created_on) as date, SUM(amount) as total")
-            ->groupBy('DATE(created_on)')
-            ->orderBy('DATE(created_on)', 'ASC')
-            ->limit(7)
+        // Revenue chart data
+        $revenueData = $mpesaModel
+            ->select("DATE(created_at) as date, SUM(amount) as total")
+            ->where('result_code', 0)
+            ->where('MONTH(created_at)', $month)
+            ->where('YEAR(created_at)', $year)
+            ->groupBy('DATE(created_at)')
+            ->orderBy('DATE(created_at)', 'ASC')
             ->findAll();
-
-        $data['chartLabels'] = array_column($chartData, 'date');
-        $data['chartValues'] = array_map('floatval', array_column($chartData, 'total'));
+        $chartLabels = array_column($revenueData, 'date');
+        $chartValues = array_map('floatval', array_column($revenueData, 'total'));
 
         // Voucher usage trends
-        $voucherUsage = $voucherModel->select("DATE(used_at) as date, COUNT(id) as total")
+        $voucherUsage = $voucherModel
+            ->select("DATE(used_at) as date, COUNT(id) as total")
             ->where('used_at IS NOT NULL')
+            ->where('MONTH(used_at)', $month)
+            ->where('YEAR(used_at)', $year)
             ->groupBy('DATE(used_at)')
             ->orderBy('DATE(used_at)', 'ASC')
-            ->limit(7)
             ->findAll();
+        $voucherLabels = array_column($voucherUsage, 'date');
+        $voucherValues = array_map('intval', array_column($voucherUsage, 'total'));
 
-        $data['voucherLabels'] = array_column($voucherUsage, 'date');
-        $data['voucherValues'] = array_map('intval', array_column($voucherUsage, 'total'));
+        // Recent transactions & clients
+        $recentTransactions = $mpesaModel->orderBy('created_at', 'DESC')->limit(5)->findAll();
+        $recentClients = $clientModel->orderBy('created_at', 'DESC')->limit(5)->findAll();
 
-        // Expiring subscriptions (next 24 hours)
-        $data['expiringSoon'] = $subscriptionModel
+        // Expiring subscriptions
+        $expiringSoon = $subscriptionModel
             ->where('status', 'active')
             ->where('expires_on <=', date('Y-m-d H:i:s', strtotime('+24 hours')))
             ->findAll();
 
-        return view('admin/dashboard', $data);
+        // Pass all variables to the view
+        return view('admin/dashboard', [
+            'totalClients'        => $totalClients,
+            'totalPackages'       => $totalPackages,
+            'totalRevenue'        => $totalRevenue,
+            'activeSubscriptions' => $activeSubscriptions,
+            'chartLabels'         => $chartLabels,
+            'chartValues'         => $chartValues,
+            'voucherLabels'       => $voucherLabels,
+            'voucherValues'       => $voucherValues,
+            'recentTransactions'  => $recentTransactions,
+            'recentClients'       => $recentClients,
+            'expiringSoon'        => $expiringSoon,
+            'month'               => $month,
+            'year'                => $year
+        ]);
     }
 }

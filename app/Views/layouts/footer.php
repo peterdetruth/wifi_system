@@ -1,7 +1,3 @@
-  </div> <!-- end of main-container -->
-  <footer>
-      <p>&copy; <?= date('Y') ?> Beth WiFi</p>
-  </footer>
-  <script src="<?= base_url('assets/js/bootstrap.bundle.min.js') ?>"></script>
-</body>
-</html>
+<div class="text-center py-3 border-top mt-4">
+    <small>&copy; <?= date('Y') ?> UniWiPay. All rights reserved.</small>
+</div>
