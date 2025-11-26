@@ -13,6 +13,14 @@
     <?php else: ?>
         <div class="card shadow-sm">
             <div class="card-body p-0">
+                <form method="get" action="/admin/transactions/export" class="d-inline">
+                    <input type="hidden" name="client_id" value="<?= $_GET['client_id'] ?? '' ?>">
+                    <input type="hidden" name="package_id" value="<?= $_GET['package_id'] ?? '' ?>">
+                    <input type="hidden" name="date_from" value="<?= $_GET['date_from'] ?? '' ?>">
+                    <input type="hidden" name="date_to" value="<?= $_GET['date_to'] ?? '' ?>">
+                    <button class="btn btn-success">Export CSV</button>
+                </form>
+
 
                 <table class="table table-hover table-striped mb-0">
                     <thead class="table-dark">
@@ -28,26 +36,26 @@
                     </thead>
 
                     <tbody>
-                        <?php $i = 1; foreach ($payments as $p): ?>
-                        <tr>
-                            <td><?= $i++ ?></td>
-                            <td><?= esc($p['client_username'] ?? 'Unknown') ?></td>
-                            <td><?= esc($p['package_name'] ?? '-') ?></td>
+                        <?php $i = 1;
+                        foreach ($payments as $p): ?>
+                            <tr>
+                                <td><?= $i++ ?></td>
+                                <td><?= esc($p['client_username'] ?? 'Unknown') ?></td>
+                                <td><?= esc($p['package_name'] ?? '-') ?></td>
 
-                            <td>KES <?= number_format($p['amount'] ?? 0, 2) ?></td>
+                                <td>KES <?= number_format($p['amount'] ?? 0, 2) ?></td>
 
-                            <td><?= esc($p['mpesa_code'] ?? '-') ?></td>
+                                <td><?= esc($p['mpesa_code'] ?? '-') ?></td>
 
-                            <td>
-                                <span class="badge 
-                                    <?= ($p['status'] === 'completed') ? 'bg-success' : 
-                                        (($p['status'] === 'pending') ? 'bg-warning text-dark' : 'bg-danger') ?>">
-                                    <?= ucfirst($p['status'] ?? 'unknown') ?>
-                                </span>
-                            </td>
+                                <td>
+                                    <span class="badge 
+                                    <?= ($p['status'] === 'completed') ? 'bg-success' : (($p['status'] === 'pending') ? 'bg-warning text-dark' : 'bg-danger') ?>">
+                                        <?= ucfirst($p['status'] ?? 'unknown') ?>
+                                    </span>
+                                </td>
 
-                            <td><?= date('d M Y, H:i', strtotime($p['created_at'])) ?></td>
-                        </tr>
+                                <td><?= date('d M Y, H:i', strtotime($p['created_at'])) ?></td>
+                            </tr>
                         <?php endforeach; ?>
                     </tbody>
 

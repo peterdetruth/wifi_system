@@ -3,16 +3,24 @@
 namespace App\Controllers\Client;
 
 use App\Controllers\BaseController;
+use App\Models\TransactionModel;
+use App\Models\PackageModel;
 
 class Transactions extends BaseController
 {
+    protected $transactionModel;
+    protected $packageModel;
+
     public function __construct()
     {
-        helper(['url', 'text', 'TransactionHelper']);
+        helper(['url', 'text']);
+
+        $this->transactionModel = new TransactionModel();
+        $this->packageModel     = new PackageModel();
     }
 
     /**
-     * Show client's transactions
+     * Display logged-in client's transactions
      */
     public function index()
     {
@@ -24,8 +32,13 @@ class Transactions extends BaseController
                 ->with('error', 'Please login');
         }
 
-        // Fetch only this client's transactions
-        $transactions = getTransactions($clientId, false);
+        // Fetch only this client's transactions with package info
+        $transactions = $this->transactionModel
+            ->select('transactions.*, packages.name AS package_name')
+            ->join('packages', 'packages.id = transactions.package_id', 'left')
+            ->where('transactions.client_id', $clientId)
+            ->orderBy('transactions.created_on', 'DESC')
+            ->findAll();
 
         return view('client/transactions/index', [
             'transactions' => $transactions
