@@ -29,22 +29,28 @@
           </tr>
         </thead>
         <tbody>
-          <?php $i = 1; foreach ($transactions as $tx): ?>
-          <tr>
+          <?php $i = 1; foreach ($transactions as $tx): 
+                $status = strtolower($tx['status'] ?? 'pending');
+                $rowClass = 'table-light';
+                if ($status === 'failed') $rowClass = 'table-danger';
+                elseif ($status === 'pending') $rowClass = 'table-warning';
+                elseif ($status === 'success') $rowClass = 'table-success';
+          ?>
+          <tr class="<?= $rowClass ?>">
             <td><?= $i++ ?></td>
             <td><?= esc($tx['client_username'] ?? 'N/A') ?></td>
             <td><?= esc($tx['package_name'] ?? '-') ?></td>
             <td><?= esc($tx['package_type'] ?? '-') ?></td>
             <td>KES <?= number_format($tx['amount'] ?? 0, 2) ?></td>
-            <td><?= ucfirst($tx['method'] ?? 'mpesa') ?></td>
-            <td><?= esc($tx['mpesa_code'] ?? '-') ?></td>
+            <td><?= ucfirst($tx['payment_method'] ?? 'mpesa') ?></td>
+            <td><?= esc($tx['mpesa_receipt_number'] ?? '-') ?></td>
             <td>
               <span class="badge 
-                <?= ($tx['status'] === 'success') ? 'bg-success' : (($tx['status'] === 'failed') ? 'bg-danger' : 'bg-warning text-dark') ?>">
-                <?= ucfirst($tx['status'] ?? 'pending') ?>
+                <?= $status === 'success' ? 'bg-success' : ($status === 'failed' ? 'bg-danger' : 'bg-warning text-dark') ?>">
+                <?= ucfirst($status) ?>
               </span>
             </td>
-            <td><?= date('d M Y, H:i', strtotime($tx['created_on'])) ?></td>
+            <td><?= isset($tx['created_at']) ? date('d M Y, H:i', strtotime($tx['created_at'])) : '-' ?></td>
             <td><?= isset($tx['expires_on']) ? date('d M Y, H:i', strtotime($tx['expires_on'])) : '-' ?></td>
           </tr>
           <?php endforeach; ?>

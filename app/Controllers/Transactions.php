@@ -1,49 +1,69 @@
 <?php
-namespace App\Controllers\Admin;
+
 namespace App\Controllers;
+
 use App\Controllers\BaseController;
-use App\Models\TransactionModel;
+use App\Models\MpesaTransactionModel;
 use App\Models\ClientModel;
 use App\Models\PackageModel;
 use Config\Database;
-use CodeIgniter\Controller;
 
 class Transactions extends BaseController
 {
-    protected $transactionModel;
-    protected $clientModel;
-    protected $packageModel;
+    protected MpesaTransactionModel $transactionModel;
+    protected ClientModel $clientModel;
+    protected PackageModel $packageModel;
 
     public function __construct()
     {
-        $this->transactionModel = new TransactionModel();
+        $this->transactionModel = new MpesaTransactionModel();
         $this->clientModel = new ClientModel();
         $this->packageModel = new PackageModel();
     }
 
-    protected function checkLogin() {
+    /**
+     * Ensure admin is logged in
+     */
+    protected function checkLogin()
+    {
         if (! session()->get('isLoggedIn')) {
-            return redirect()->to('/login')->with('error','Please login')->send();
+            return redirect()->to('/login')->with('error', 'Please login')->send();
         }
     }
 
+    /**
+     * List all transactions
+     */
     public function index()
     {
         $this->checkLogin();
-        $data['transactions'] = $this->transactionModel
-            ->select('transactions.*, packages.name AS package_name, clients.username AS client_username')
-            ->join('packages', 'packages.id = transactions.package_id', 'left')
-            ->join('clients', 'clients.id = transactions.client_id', 'left')
-            ->orderBy('transactions.created_on', 'DESC')
+
+        $transactions = $this->transactionModel
+            ->select('
+                mpesa_transactions.*,
+                packages.name AS package_name,
+                packages.type AS package_type,
+                packages.account_type AS package_account_type,
+                clients.username AS client_username
+            ')
+            ->join('packages', 'packages.id = mpesa_transactions.package_id', 'left')
+            ->join('clients', 'clients.id = mpesa_transactions.client_id', 'left')
+            ->orderBy('mpesa_transactions.created_at', 'DESC')
             ->findAll();
-        $data['clients'] = $this->clientModel->orderBy('id','DESC')->findAll();
-        $data['packages'] = $this->packageModel->orderBy('id','DESC')->findAll();
 
-        // print_r($data);exit();
+        $clients = $this->clientModel->orderBy('id', 'DESC')->findAll();
+        $packages = $this->packageModel->orderBy('id', 'DESC')->findAll();
 
-        echo view('admin/transactions/index', $data);
+        return view('admin/transactions/index', [
+            'transactions' => $transactions,
+            'clients'      => $clients,
+            'packages'     => $packages
+        ]);
     }
 
+    /**
+     * Store a new transaction
+     */
     public function store()
     {
         try {
@@ -55,11 +75,15 @@ class Transactions extends BaseController
 
             $dbError = $this->transactionModel->errors() ?: Database::connect()->error();
             return redirect()->back()->withInput()->with('error', 'Failed to create transaction: ' . print_r($dbError, true));
+
         } catch (\Exception $e) {
             return redirect()->back()->withInput()->with('error', 'Error: ' . $e->getMessage());
         }
     }
 
+    /**
+     * Update an existing transaction
+     */
     public function update($id)
     {
         try {
@@ -71,11 +95,15 @@ class Transactions extends BaseController
 
             $dbError = $this->transactionModel->errors() ?: Database::connect()->error();
             return redirect()->back()->withInput()->with('error', 'Failed to update transaction: ' . print_r($dbError, true));
+
         } catch (\Exception $e) {
             return redirect()->back()->withInput()->with('error', 'Error: ' . $e->getMessage());
         }
     }
 
+    /**
+     * Delete a transaction
+     */
     public function delete($id)
     {
         try {
@@ -85,6 +113,7 @@ class Transactions extends BaseController
 
             $dbError = Database::connect()->error();
             return redirect()->to('/admin/transactions')->with('error', 'Failed to delete transaction: ' . print_r($dbError, true));
+
         } catch (\Exception $e) {
             return redirect()->to('/admin/transactions')->with('error', 'Error: ' . $e->getMessage());
         }

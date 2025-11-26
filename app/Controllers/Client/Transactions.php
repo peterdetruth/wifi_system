@@ -3,15 +3,16 @@
 namespace App\Controllers\Client;
 
 use App\Controllers\BaseController;
-use App\Models\TransactionModel;
+use App\Models\MpesaTransactionModel;
+use App\Models\PackageModel;
 
 class Transactions extends BaseController
 {
-    protected $transactionModel;
+    protected MpesaTransactionModel $transactionModel;
 
     public function __construct()
     {
-        $this->transactionModel = new TransactionModel();
+        $this->transactionModel = new MpesaTransactionModel();
         helper(['url', 'text']);
     }
 
@@ -27,10 +28,15 @@ class Transactions extends BaseController
 
         // Join packages so we can show package name
         $transactions = $this->transactionModel
-            ->select('transactions.*, packages.name AS package_name')
-            ->join('packages', 'packages.id = transactions.package_id', 'left')
-            ->where('transactions.client_id', $clientId)
-            ->orderBy('transactions.created_on', 'DESC')
+            ->select('
+                mpesa_transactions.*,
+                packages.name AS package_name,
+                packages.type AS package_type,
+                packages.account_type AS package_account_type
+            ')
+            ->join('packages', 'packages.id = mpesa_transactions.package_id', 'left')
+            ->where('mpesa_transactions.client_id', $clientId)
+            ->orderBy('mpesa_transactions.created_at', 'DESC')
             ->findAll();
 
         return view('client/transactions/index', [
