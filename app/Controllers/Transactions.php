@@ -19,6 +19,8 @@ class Transactions extends BaseController
         $this->transactionModel = new MpesaTransactionModel();
         $this->clientModel = new ClientModel();
         $this->packageModel = new PackageModel();
+
+        helper('TransactionHelper'); // Load transaction helper
     }
 
     /**
@@ -26,30 +28,22 @@ class Transactions extends BaseController
      */
     protected function checkLogin()
     {
-        if (! session()->get('isLoggedIn')) {
-            return redirect()->to('/login')->with('error', 'Please login')->send();
+        if (!session()->get('isLoggedIn')) {
+            return redirect()->to('/login')
+                ->with('error', 'Please login')
+                ->send();
         }
     }
 
     /**
-     * List all transactions
+     * List all transactions (Admin)
      */
     public function index()
     {
         $this->checkLogin();
 
-        $transactions = $this->transactionModel
-            ->select('
-                mpesa_transactions.*,
-                packages.name AS package_name,
-                packages.type AS package_type,
-                packages.account_type AS package_account_type,
-                clients.username AS client_username
-            ')
-            ->join('packages', 'packages.id = mpesa_transactions.package_id', 'left')
-            ->join('clients', 'clients.id = mpesa_transactions.client_id', 'left')
-            ->orderBy('mpesa_transactions.created_at', 'DESC')
-            ->findAll();
+        // Fetch transactions with client + package info
+        $transactions = getTransactions(null, true);
 
         $clients = $this->clientModel->orderBy('id', 'DESC')->findAll();
         $packages = $this->packageModel->orderBy('id', 'DESC')->findAll();
@@ -70,19 +64,24 @@ class Transactions extends BaseController
             $data = $this->request->getPost();
 
             if ($this->transactionModel->save($data)) {
-                return redirect()->to('/admin/transactions')->with('success', 'Transaction created successfully.');
+                return redirect()->to('/admin/transactions')
+                    ->with('success', 'Transaction created successfully.');
             }
 
             $dbError = $this->transactionModel->errors() ?: Database::connect()->error();
-            return redirect()->back()->withInput()->with('error', 'Failed to create transaction: ' . print_r($dbError, true));
+            return redirect()->back()
+                ->withInput()
+                ->with('error', 'Failed to create transaction: ' . print_r($dbError, true));
 
         } catch (\Exception $e) {
-            return redirect()->back()->withInput()->with('error', 'Error: ' . $e->getMessage());
+            return redirect()->back()
+                ->withInput()
+                ->with('error', 'Error: ' . $e->getMessage());
         }
     }
 
     /**
-     * Update an existing transaction
+     * Update a transaction
      */
     public function update($id)
     {
@@ -90,14 +89,20 @@ class Transactions extends BaseController
             $data = $this->request->getPost();
 
             if ($this->transactionModel->update($id, $data)) {
-                return redirect()->to('/admin/transactions')->with('success', 'Transaction updated successfully.');
+                return redirect()->to('/admin/transactions')
+                    ->with('success', 'Transaction updated successfully.');
             }
 
             $dbError = $this->transactionModel->errors() ?: Database::connect()->error();
-            return redirect()->back()->withInput()->with('error', 'Failed to update transaction: ' . print_r($dbError, true));
+
+            return redirect()->back()
+                ->withInput()
+                ->with('error', 'Failed to update transaction: ' . print_r($dbError, true));
 
         } catch (\Exception $e) {
-            return redirect()->back()->withInput()->with('error', 'Error: ' . $e->getMessage());
+            return redirect()->back()
+                ->withInput()
+                ->with('error', 'Error: ' . $e->getMessage());
         }
     }
 
@@ -108,14 +113,18 @@ class Transactions extends BaseController
     {
         try {
             if ($this->transactionModel->delete($id)) {
-                return redirect()->to('/admin/transactions')->with('success', 'Transaction deleted successfully.');
+                return redirect()->to('/admin/transactions')
+                    ->with('success', 'Transaction deleted successfully.');
             }
 
             $dbError = Database::connect()->error();
-            return redirect()->to('/admin/transactions')->with('error', 'Failed to delete transaction: ' . print_r($dbError, true));
+
+            return redirect()->to('/admin/transactions')
+                ->with('error', 'Failed to delete transaction: ' . print_r($dbError, true));
 
         } catch (\Exception $e) {
-            return redirect()->to('/admin/transactions')->with('error', 'Error: ' . $e->getMessage());
+            return redirect()->to('/admin/transactions')
+                ->with('error', 'Error: ' . $e->getMessage());
         }
     }
 }
