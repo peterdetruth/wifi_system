@@ -17,14 +17,14 @@ $routes->get('/logout', 'AuthController::logout');
 // ==============================
 // 🧭 ADMIN ROUTES (Require auth)
 // ==============================
-$routes->group('admin', ['filter' => 'auth', 'namespace' => 'App\Controllers'], static function($routes) {
+$routes->group('admin', ['filter' => 'auth', 'namespace' => 'App\Controllers'], static function ($routes) {
 
     // Dashboard
     $routes->get('/', 'Dashboard::index');
     $routes->get('dashboard', 'Dashboard::index');
 
     // 🧩 Admins
-    $routes->group('admins', static function($routes) {
+    $routes->group('admins', static function ($routes) {
         $routes->get('/', 'Admins::index');
         $routes->get('create', 'Admins::create');
         $routes->post('store', 'Admins::store');
@@ -34,7 +34,7 @@ $routes->group('admin', ['filter' => 'auth', 'namespace' => 'App\Controllers'], 
     });
 
     // 💼 Packages
-    $routes->group('packages', static function($routes) {
+    $routes->group('packages', static function ($routes) {
         $routes->get('/', 'Packages::index');
         $routes->get('create', 'Packages::create');
         $routes->post('store', 'Packages::store');
@@ -44,7 +44,7 @@ $routes->group('admin', ['filter' => 'auth', 'namespace' => 'App\Controllers'], 
     });
 
     // 👥 Clients
-    $routes->group('clients', static function($routes) {
+    $routes->group('clients', static function ($routes) {
         $routes->get('/', 'Clients::index');
         $routes->get('create', 'Clients::create');
         $routes->post('store', 'Clients::store');
@@ -55,7 +55,7 @@ $routes->group('admin', ['filter' => 'auth', 'namespace' => 'App\Controllers'], 
     });
 
     // 🌐 Routers
-    $routes->group('routers', static function($routes) {
+    $routes->group('routers', static function ($routes) {
         $routes->get('/', 'Routers::index');
         $routes->get('create', 'Routers::create');
         $routes->post('store', 'Routers::store');
@@ -66,7 +66,7 @@ $routes->group('admin', ['filter' => 'auth', 'namespace' => 'App\Controllers'], 
     });
 
     // 🎟️ Vouchers
-    $routes->group('vouchers', static function($routes) {
+    $routes->group('vouchers', static function ($routes) {
         $routes->get('/', 'Vouchers::index');
         $routes->get('create', 'Vouchers::create');
         $routes->post('store', 'Vouchers::store');
@@ -76,7 +76,7 @@ $routes->group('admin', ['filter' => 'auth', 'namespace' => 'App\Controllers'], 
     });
 
     // 💳 Transactions
-    $routes->group('transactions', static function($routes) {
+    $routes->group('transactions', static function ($routes) {
         $routes->get('/', 'Transactions::index');
     });
 
@@ -84,18 +84,23 @@ $routes->group('admin', ['filter' => 'auth', 'namespace' => 'App\Controllers'], 
     $routes->get('mpesa-logs', '\App\Controllers\MpesaLogs::index');
 
     // 📞 M-PESA Logs (legacy view, optional)
-    $routes->group('mpesa', static function($routes) {
+    $routes->group('mpesa', static function ($routes) {
         $routes->get('/', 'Mpesa::index');
     });
 
     // 👥 Subscribers
-    $routes->group('subscribers', static function($routes) {
+    $routes->group('subscribers', static function ($routes) {
         $routes->get('active', 'Subscribers::active');
         $routes->get('expired', 'Subscribers::expired');
     });
+
+    // 💰 Payments (Admin)
+    $routes->group('payments', static function ($routes) {
+        $routes->get('/', 'Payments::index');
+    });
 });
 
-$routes->group('admin/features', ['namespace' => 'App\Controllers\Admin'], function($routes) {
+$routes->group('admin/features', ['namespace' => 'App\Controllers\Admin'], function ($routes) {
     $routes->get('/', 'Features::index');
     $routes->get('create', 'Features::create');
     $routes->post('store', 'Features::store');
@@ -111,7 +116,7 @@ $routes->post('/mpesa/callback', 'Mpesa::callback');
 // ==============================
 // 👤 CLIENT ROUTES
 // ==============================
-$routes->group('client', ['namespace' => 'App\Controllers\Client'], static function($routes) {
+$routes->group('client', ['namespace' => 'App\Controllers\Client'], static function ($routes) {
 
     // Auth
     $routes->get('register', 'Auth::register');
@@ -121,7 +126,7 @@ $routes->group('client', ['namespace' => 'App\Controllers\Client'], static funct
     $routes->get('logout', 'Auth::logout');
 
     // Protected routes
-    $routes->group('', ['filter' => 'clientAuth'], static function($routes) {
+    $routes->group('', ['filter' => 'clientAuth'], static function ($routes) {
 
         // Dashboard
         $routes->get('dashboard', 'Dashboard::index');
@@ -170,6 +175,3 @@ $routes->get('test/envcheck', 'Test::envcheck');
 $routes->get('test-sms', 'Mpesa::testSms');
 $routes->get('client/payments/pending/(:segment)', 'Client\Payments::pending/$1');
 $routes->get('client/payments/checkStatus', 'Client\Payments::checkStatus');
-
-
-
