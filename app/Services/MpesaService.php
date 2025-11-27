@@ -28,9 +28,6 @@ class MpesaService
         $this->db = \Config\Database::connect();
     }
 
-    /**
-     * Initiates an M-PESA transaction (STK Push) and returns checkoutRequestID or null
-     */
     public function initiateTransaction(
         int $clientId,
         int $packageId,
@@ -51,33 +48,29 @@ class MpesaService
             }
 
             $accessToken = $this->requestAccessToken();
-            if (!$accessToken) {
-                $this->logger->info("Failed to obtain M-PESA access token, creating fallback transaction");
-                return $this->createFallbackTransaction($clientId, $packageId, $amount, $phone, $package);
-            }
+            if (!$accessToken) return null;
 
             $stkPayload = $this->buildStkPayload($client, $package, $amount, $phone);
             $stkResponse = $this->sendStkPush($accessToken, $stkPayload);
 
             if (!is_array($stkResponse) || !isset($stkResponse['ResponseCode']) || $stkResponse['ResponseCode'] !== "0") {
-                $this->logger->info("STK push failed, creating fallback transaction", $stkResponse ?? []);
+                $this->logger->error("STK push failed", $stkResponse ?? []);
                 return $this->createFallbackTransaction($clientId, $packageId, $amount, $phone, $package);
             }
 
             $checkoutRequestId = $this->savePendingTransaction($clientId, $packageId, $amount, $phone, $stkResponse);
+
         } catch (\Throwable $e) {
             $this->logger->error("Exception in initiateTransaction", [
                 'message' => $e->getMessage(),
                 'file' => $e->getFile(),
                 'line' => $e->getLine()
             ]);
-            $package = $this->packageModel->find($packageId);
-            $checkoutRequestId = $this->createFallbackTransaction($clientId, $packageId, $amount, $phone, $package);
+            $checkoutRequestId = $this->createFallbackTransaction($clientId, $packageId, $amount, $phone, $package ?? null);
         }
 
         return $checkoutRequestId;
     }
-
 
     private function requestAccessToken(): ?string
     {
@@ -182,15 +175,17 @@ class MpesaService
         }
     }
 
-    private function createFallbackTransaction(int $clientId, int $packageId, float $amount, string $phone): ?string
+    private function createFallbackTransaction(int $clientId, int $packageId, float $amount, string $phone, ?array $package = null): ?string
     {
         try {
-            $transactionId = 'TEMP_' . substr(md5(microtime()), 0, 8);
+            if (!$package) {
+                $package = $this->packageModel->find($packageId);
+            }
 
             $insert = [
                 'client_id' => $clientId,
                 'package_id' => $packageId,
-                'transaction_id' => $transactionId,
+                'transaction_id' => 'TEMP_' . substr(md5(microtime()), 0, 8),
                 'merchant_request_id' => 'N/A',
                 'checkout_request_id' => 'N/A',
                 'amount' => $amount,
@@ -200,44 +195,32 @@ class MpesaService
             ];
 
             $this->transactionModel->insert($insert);
-            $transactionInsertId = $this->transactionModel->getInsertID();
+            $transactionId = $this->transactionModel->getInsertID();
 
-            $this->logger->info("Fallback STK transaction created", [
-                'transaction_id' => $transactionId,
-                'insert_id' => $transactionInsertId,
-                'client_id' => $clientId,
-                'package_id' => $packageId,
-                'amount' => $amount
-            ]);
-
-            // Optionally pre-calculate expiry for subscription
-            $package = $this->packageModel->find($packageId);
             if ($package) {
-                $durationLength = (int)($package['duration_length'] ?? 1);
-                $durationUnit = $package['duration_unit'] ?? 'days';
-                $validUnits = ['minutes', 'hours', 'days', 'months'];
-                if (!in_array($durationUnit, $validUnits)) {
-                    $this->logger->info("Invalid duration_unit in package, defaulting to days", [
-                        'package_id' => $package['id'] ?? null,
-                        'duration_unit' => $durationUnit
-                    ]);
-                    $durationUnit = 'days';
-                }
-
                 $startDate = date('Y-m-d H:i:s');
-                $expiresOn = date('Y-m-d H:i:s', strtotime("+$durationLength $durationUnit", strtotime($startDate)));
+                $expiresOn = $this->calculateSubscriptionExpiry($package, $startDate);
 
-                $this->logger->info("Fallback subscription expiry calculated", [
+                $subscriptionModel = new \App\Models\SubscriptionModel();
+                $subscriptionModel->insert([
                     'client_id' => $clientId,
                     'package_id' => $packageId,
+                    'payment_id' => null,
                     'start_date' => $startDate,
+                    'expires_on' => $expiresOn,
+                    'status' => 'pending'
+                ]);
+
+                $this->logger->info("Created fallback subscription with correct expiry", [
+                    'client_id' => $clientId,
+                    'package_id' => $packageId,
                     'expires_on' => $expiresOn
                 ]);
             }
 
-            return $transactionInsertId;
+            return $transactionId;
         } catch (\Throwable $e) {
-            $this->logger->error("Failed to create fallback pending transaction", ['exception' => $e->getMessage()]);
+            $this->logger->error("Failed to create fallback transaction", ['exception' => $e->getMessage()]);
             return null;
         }
     }
@@ -281,6 +264,7 @@ class MpesaService
             }
 
             return $this->processSuccessfulCallback($transaction, $callback, $resultDesc, $checkoutRequestId);
+
         } catch (\Throwable $e) {
             $this->logger->error("Exception in handleCallback", [
                 'message' => $e->getMessage(),
@@ -289,6 +273,21 @@ class MpesaService
             ]);
             return ['ResultCode' => 1, 'ResultDesc' => 'Internal error'];
         }
+    }
+
+    private function calculateSubscriptionExpiry(array $package, ?string $startDate = null): string
+    {
+        $startDate = $startDate ?? date('Y-m-d H:i:s');
+
+        if (!empty($package['duration_length']) && !empty($package['duration_unit'])) {
+            return date(
+                'Y-m-d H:i:s',
+                strtotime("+{$package['duration_length']} {$package['duration_unit']}", strtotime($startDate))
+            );
+        }
+
+        // fallback to 1 day
+        return date('Y-m-d H:i:s', strtotime('+1 day', strtotime($startDate)));
     }
 
     private function processSuccessfulCallback(array $transaction, array $callback, string $resultDesc, string $checkoutRequestId): array
@@ -301,15 +300,9 @@ class MpesaService
 
         foreach ($metadata as $item) {
             switch ($item['Name'] ?? null) {
-                case 'Amount':
-                    $amount = $item['Value'] ?? null;
-                    break;
-                case 'MpesaReceiptNumber':
-                    $mpesaReceipt = $item['Value'] ?? null;
-                    break;
-                case 'PhoneNumber':
-                    $phone = $item['Value'] ?? null;
-                    break;
+                case 'Amount': $amount = $item['Value'] ?? null; break;
+                case 'MpesaReceiptNumber': $mpesaReceipt = $item['Value'] ?? null; break;
+                case 'PhoneNumber': $phone = $item['Value'] ?? null; break;
                 case 'TransactionDate':
                     if ($item['Value']) {
                         $transactionDate = \DateTime::createFromFormat('YmdHis', substr((string)$item['Value'], 0, 14));
@@ -321,7 +314,6 @@ class MpesaService
 
         if (empty($mpesaReceipt)) $mpesaReceipt = 'UNKNOWN_' . $transaction['id'];
 
-        // Update mpesa_transactions safely
         try {
             $this->transactionModel->update($transaction['id'], [
                 'amount' => $amount ?? $transaction['amount'],
@@ -339,7 +331,6 @@ class MpesaService
 
         $this->db->transStart();
         try {
-            // Payments
             $paymentRow = $this->paymentsModel->where('mpesa_transaction_id', $transaction['id'])->first();
             $paymentData = [
                 'mpesa_transaction_id' => $transaction['id'],
@@ -361,7 +352,6 @@ class MpesaService
                 $paymentId = $this->paymentsModel->insert($paymentData, true);
             }
 
-            // Subscriptions
             $subscriptionModel = new \App\Models\SubscriptionModel();
             $existingSubs = $subscriptionModel->where('client_id', $transaction['client_id'])
                 ->where('package_id', $transaction['package_id'])
@@ -373,23 +363,8 @@ class MpesaService
             }
 
             $startDate = date('Y-m-d H:i:s');
-
-            // Calculate expiry using real package duration
             $package = $this->packageModel->find($transaction['package_id']);
-            $durationLength = (int)($package['duration_length'] ?? 1);
-            $durationUnit = $package['duration_unit'] ?? 'days';
-
-            // Validate duration_unit
-            $validUnits = ['minutes', 'hours', 'days', 'months'];
-            if (!in_array($durationUnit, $validUnits)) {
-                $this->logger->info("Invalid duration_unit in package, defaulting to days", [
-                    'package_id' => $package['id'] ?? null,
-                    'duration_unit' => $durationUnit
-                ]);
-                $durationUnit = 'days';
-            }
-
-            $expiresOn = date('Y-m-d H:i:s', strtotime("+$durationLength $durationUnit", strtotime($startDate)));
+            $expiresOn = $this->calculateSubscriptionExpiry($package, $startDate);
 
             $subId = $subscriptionModel->insert([
                 'client_id' => $transaction['client_id'],
@@ -406,7 +381,6 @@ class MpesaService
                 'package_id' => $transaction['package_id']
             ]);
 
-            // Router activation placeholder
             $routerId = $package['router_id'] ?? null;
             $this->logger->debug("Router activation placeholder called", [
                 'subscription_id' => $subId,
