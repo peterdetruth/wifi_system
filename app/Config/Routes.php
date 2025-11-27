@@ -118,14 +118,18 @@ $routes->post('/mpesa/callback', 'Mpesa::callback');
 // ==============================
 $routes->group('client', ['namespace' => 'App\Controllers\Client'], static function ($routes) {
 
-    // Auth
+    // ------------------------------
+    // Public Auth routes
+    // ------------------------------
     $routes->get('register', 'Auth::register');
     $routes->post('register-post', 'Auth::registerPost');
     $routes->get('login', 'Auth::login');
     $routes->post('login-post', 'Auth::loginPost');
     $routes->get('logout', 'Auth::logout');
 
-    // Protected routes
+    // ------------------------------
+    // Protected routes (require clientAuth)
+    // ------------------------------
     $routes->group('', ['filter' => 'clientAuth'], static function ($routes) {
 
         // Dashboard
@@ -159,19 +163,22 @@ $routes->group('client', ['namespace' => 'App\Controllers\Client'], static funct
         $routes->get('payments/checkout/(:num)', 'Payments::checkout/$1');
         $routes->get('payments/buy/(:num)', 'Payments::buy/$1');
         $routes->get('payments/success/(:num)', 'Payments::success/$1');
-        $routes->post('payments/process', 'Payments::process');
         $routes->get('payments/waiting/(:num)', 'Payments::waiting/$1');
         $routes->get('payments/pending', 'Payments::pending');
         $routes->get('payments/initiate/(:num)', 'Payments::initiatePayment/$1');
+        $routes->post('payments/process', 'Payments::process');
+        $routes->get('payments/status/(:segment)', 'Payments::status/$1');
+        $routes->get('payments/pending/(:segment)', 'Payments::pending/$1');
+        $routes->get('payments/checkStatus', 'Payments::checkStatus');
 
         // M-PESA callback endpoint (for client)
-        $routes->post('/mpesa/callback', 'Mpesa::callback');
-
-        $routes->get('client/payments/status/(:segment)', 'Client\Payments::status/$1');
+        $routes->post('mpesa/callback', 'Mpesa::callback');
     });
 });
 
+
+// ==============================
+// TEST ROUTES
+// ==============================
 $routes->get('test/envcheck', 'Test::envcheck');
 $routes->get('test-sms', 'Mpesa::testSms');
-$routes->get('client/payments/pending/(:segment)', 'Client\Payments::pending/$1');
-$routes->get('client/payments/checkStatus', 'Client\Payments::checkStatus');
