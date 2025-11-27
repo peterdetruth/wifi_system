@@ -1,102 +1,156 @@
-<?= $this->extend('layouts/main') ?>
-<?= $this->section('content') ?>
+document.addEventListener('DOMContentLoaded', function() {
 
-<div class="container my-5">
+    // Toggle package form
+    document.querySelectorAll('.toggle-form').forEach(btn => {
+        btn.addEventListener('click', function () {
+            const id = this.dataset.packageId;
+            document.getElementById('package-form-' + id).classList.toggle('d-none');
+        });
+    });
 
-    <!-- How to Purchase -->
-    <div class="row mb-4">
-        <div class="col-12">
-            <div class="alert alert-info">
-                <h4>How to Purchase</h4>
-                <ol class="mb-0">
-                    <li>Tap on your preferred package</li>
-                    <li>Enter your phone number</li>
-                    <li>Click <strong>PAY NOW</strong></li>
-                    <li>Enter your M-PESA PIN and wait up to 30 seconds</li>
-                </ol>
-            </div>
-        </div>
-    </div>
+    // Handle package payments
+    document.querySelectorAll('.ajax-package-form').forEach(form => {
+        form.addEventListener('submit', async function(e) {
+            e.preventDefault();
 
-    <!-- Packages -->
-    <div class="row">
-        <?php foreach ($packages as $package) : ?>
-            <div class="col-md-4 mb-4">
-                <div class="card h-100 shadow-sm">
-                    <div class="card-body">
-                        <h5 class="card-title"><?= esc($package['name']) ?></h5>
-                        <p class="card-text">
-                            <strong>Price:</strong> KES <?= esc($package['price']) ?><br>
-                            <strong>Duration:</strong> <?= esc($package['duration_length'] . ' ' . $package['duration_unit']) ?><br>
-                            <strong>Bandwidth:</strong> <?= esc($package['bandwidth_value'] . ' ' . $package['bandwidth_unit']) ?><br>
-                        </p>
+            const packageId = this.dataset.packageId;
+            const phone = this.querySelector('input[name="phone"]').value.trim();
+            const statusDiv = document.getElementById('status-' + packageId);
 
-                        <button type="button" class="btn btn-primary toggle-form"
-                                data-package-id="<?= esc($package['id']) ?>">
-                            Pay Now
-                        </button>
+            if (!phone) {
+                statusDiv.innerHTML = '<span class="text-danger">Please enter your phone number.</span>';
+                return;
+            }
 
-                        <!-- Hidden AJAX form -->
-                        <div id="package-form-<?= esc($package['id']) ?>" class="package-form mt-3 d-none">
-                            <form class="ajax-package-form" data-package-id="<?= esc($package['id']) ?>">
-                                <input type="hidden" name="package_id" value="<?= esc($package['id']) ?>">
+            statusDiv.innerHTML = '<span class="text-info">Processing your payment...</span>';
 
-                                <div class="mb-2">
-                                    <label class="form-label">Phone Number</label>
-                                    <input type="text" name="phone" class="form-control" required>
-                                </div>
+            try {
+                const formData = new FormData();
+                formData.append('package_id', packageId);
+                formData.append('phone', phone);
 
-                                <button type="submit" class="btn btn-success w-100">Pay Now</button>
+                const response = await fetch('/client/payments/process', {
+                    method: 'POST',
+                    body: formData
+                });
 
-                                <div id="status-<?= esc($package['id']) ?>" class="mt-2 text-center"></div>
-                            </form>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        <?php endforeach; ?>
-    </div>
+                const html = await response.text();
 
-    <!-- Voucher Redeem -->
-    <div class="row mt-5">
-        <div class="col-md-6 offset-md-3">
-            <div class="card shadow-sm">
-                <div class="card-body">
-                    <h4>Redeem Voucher</h4>
-                    <form id="voucher-redeem-form">
-                        <div class="mb-3">
-                            <label class="form-label">Voucher Code</label>
-                            <input type="text" class="form-control" name="voucher_code" id="voucher" required>
-                        </div>
-                        <button type="submit" class="btn btn-success w-100">Redeem Voucher</button>
-                        <div id="voucher-status" class="mt-3 text-center"></div>
-                    </form>
-                </div>
-            </div>
-        </div>
-    </div>
+                // Replace card area with waiting screen
+                this.parentElement.innerHTML = html;
 
-    <!-- Reconnect Using M-PESA Code -->
-    <div class="row mt-4">
-        <div class="col-md-6 offset-md-3">
-            <div class="card shadow-sm">
-                <div class="card-body">
-                    <h4>Reconnect Using M-PESA Code</h4>
-                    <p class="text-muted">Enter your M-PESA code (e.g. TKK00APFAV)</p>
+                // Start polling for payment/voucher status
+                pollPaymentStatus(statusDiv);
 
-                    <form id="reconnect-form">
-                        <div class="mb-3">
-                            <label class="form-label">M-PESA Code</label>
-                            <input type="text" class="form-control" name="mpesa_code" required>
-                        </div>
-                        <button type="submit" class="btn btn-primary w-100">Reconnect</button>
-                        <div id="reconnect-status" class="mt-3 text-center"></div>
-                    </form>
-                </div>
-            </div>
-        </div>
-    </div>
+            } catch (err) {
+                console.error(err);
+                statusDiv.innerHTML = '<span class="text-danger">Payment initiation failed.</span>';
+            }
+        });
+    });
 
-</div>
+    // Payment polling
+    function pollPaymentStatus(statusDiv) {
+        const timer = setInterval(async () => {
+            try {
+                const res = await fetch('/client/payments/checkStatus');
+                const data = await res.json();
 
-<?= $this->endSection() ?>
+                if (data.status === 'success') {
+                    clearInterval(timer);
+                    const transactionId = data.transaction_id || 0;
+                    window.location.href = '/client/payments/success/' + transactionId;
+                } else if (data.status === 'unauthorized') {
+                    clearInterval(timer);
+                    statusDiv.innerHTML = '<span class="text-danger">You are not logged in.</span>';
+                }
+
+            } catch (err) {
+                console.error(err);
+            }
+        }, 3000);
+    }
+
+    // Voucher Redeem AJAX
+    const voucherForm = document.getElementById('voucher-redeem-form');
+    if (voucherForm) {
+        const voucherStatus = document.getElementById('voucher-status');
+
+        voucherForm.addEventListener('submit', async function(e) {
+            e.preventDefault();
+
+            const code = document.getElementById('voucher').value.trim();
+            if (!code) {
+                voucherStatus.innerHTML = '<span class="text-danger">Enter a voucher code.</span>';
+                return;
+            }
+
+            voucherStatus.innerHTML = '<span class="text-info">Checking voucher...</span>';
+
+            try {
+                const formData = new FormData();
+                formData.append('voucher_code', code);
+
+                const res = await fetch('/client/vouchers/redeem-post', {
+                    method: 'POST',
+                    body: formData
+                });
+
+                const result = await res.json();
+
+                if (result.status === 'success') {
+                    voucherStatus.innerHTML = '<span class="text-success">' + result.message + '</span>';
+                    setTimeout(() => window.location.href = '/client/subscriptions', 1500);
+                } else {
+                    voucherStatus.innerHTML = '<span class="text-danger">' + result.message + '</span>';
+                }
+
+            } catch (err) {
+                console.error(err);
+                voucherStatus.innerHTML = '<span class="text-danger">Redeem failed. Try again.</span>';
+            }
+        });
+    }
+
+    // Reconnect Using M-PESA Code AJAX
+    const reconnectForm = document.getElementById('reconnect-form');
+    if (reconnectForm) {
+        const reconnectStatus = document.getElementById('reconnect-status');
+
+        reconnectForm.addEventListener('submit', async function(e) {
+            e.preventDefault();
+
+            const code = reconnectForm.querySelector('input[name="mpesa_code"]').value.trim();
+            if (!code) {
+                reconnectStatus.innerHTML = '<span class="text-danger">Enter your M-PESA code.</span>';
+                return;
+            }
+
+            reconnectStatus.innerHTML = '<span class="text-info">Verifying code...</span>';
+
+            try {
+                const formData = new FormData();
+                formData.append('mpesa_code', code);
+
+                const res = await fetch('/client/payments/reconnect-mpesa', {
+                    method: 'POST',
+                    body: formData
+                });
+
+                const result = await res.json();
+
+                if (result.success) {
+                    reconnectStatus.innerHTML = '<span class="text-success">' + result.message + '</span>';
+                    setTimeout(() => window.location.reload(), 1500);
+                } else {
+                    reconnectStatus.innerHTML = '<span class="text-danger">' + result.message + '</span>';
+                }
+
+            } catch (err) {
+                console.error(err);
+                reconnectStatus.innerHTML = '<span class="text-danger">Reconnect failed. Try again.</span>';
+            }
+        });
+    }
+
+});
