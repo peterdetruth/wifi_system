@@ -58,7 +58,7 @@ class MpesaService
 
             if (!is_array($stkResponse) || !isset($stkResponse['ResponseCode']) || $stkResponse['ResponseCode'] !== "0") {
                 $this->logger->error("STK push failed", $stkResponse ?? []);
-                return null;
+                return $this->createFallbackTransaction($clientId, $packageId, $amount, $phone);
             }
 
             $checkoutRequestId = $this->savePendingTransaction($clientId, $packageId, $amount, $phone, $stkResponse);
@@ -69,6 +69,7 @@ class MpesaService
                 'file' => $e->getFile(),
                 'line' => $e->getLine()
             ]);
+            $checkoutRequestId = $this->createFallbackTransaction($clientId, $packageId, $amount, $phone);
         }
 
         return $checkoutRequestId;
@@ -76,24 +77,29 @@ class MpesaService
 
     private function requestAccessToken(): ?string
     {
-        $consumerKey = getenv('MPESA_CONSUMER_KEY');
-        $consumerSecret = getenv('MPESA_CONSUMER_SECRET');
-        $credentials = base64_encode("$consumerKey:$consumerSecret");
+        try {
+            $consumerKey = getenv('MPESA_CONSUMER_KEY');
+            $consumerSecret = getenv('MPESA_CONSUMER_SECRET');
+            $credentials = base64_encode("$consumerKey:$consumerSecret");
 
-        $ch = curl_init();
-        curl_setopt($ch, CURLOPT_URL, getenv('MPESA_OAUTH_URL'));
-        curl_setopt($ch, CURLOPT_HTTPHEADER, ["Authorization: Basic $credentials"]);
-        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-        $response = curl_exec($ch);
-        curl_close($ch);
+            $ch = curl_init();
+            curl_setopt($ch, CURLOPT_URL, getenv('MPESA_OAUTH_URL'));
+            curl_setopt($ch, CURLOPT_HTTPHEADER, ["Authorization: Basic $credentials"]);
+            curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+            $response = curl_exec($ch);
+            curl_close($ch);
 
-        $tokenResult = json_decode($response, true);
-        if (!is_array($tokenResult) || empty($tokenResult['access_token'])) {
-            $this->logger->error("Failed to obtain M-PESA access token", $tokenResult ?? $response);
+            $tokenResult = json_decode($response, true);
+            if (!is_array($tokenResult) || empty($tokenResult['access_token'])) {
+                $this->logger->error("Failed to obtain M-PESA access token", $tokenResult ?? $response);
+                return null;
+            }
+
+            return $tokenResult['access_token'];
+        } catch (\Throwable $e) {
+            $this->logger->error("Exception requesting access token", ['exception' => $e->getMessage()]);
             return null;
         }
-
-        return $tokenResult['access_token'];
     }
 
     private function buildStkPayload(array $client, array $package, float $amount, string $phone): array
@@ -120,46 +126,79 @@ class MpesaService
 
     private function sendStkPush(string $accessToken, array $payload): ?array
     {
-        $ch = curl_init();
-        curl_setopt($ch, CURLOPT_URL, getenv('MPESA_STK_URL'));
-        curl_setopt($ch, CURLOPT_HTTPHEADER, [
-            "Content-Type: application/json",
-            "Authorization: Bearer $accessToken"
-        ]);
-        curl_setopt($ch, CURLOPT_POST, true);
-        curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($payload));
-        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-        $response = curl_exec($ch);
-        curl_close($ch);
+        try {
+            $ch = curl_init();
+            curl_setopt($ch, CURLOPT_URL, getenv('MPESA_STK_URL'));
+            curl_setopt($ch, CURLOPT_HTTPHEADER, [
+                "Content-Type: application/json",
+                "Authorization: Bearer $accessToken"
+            ]);
+            curl_setopt($ch, CURLOPT_POST, true);
+            curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($payload));
+            curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+            $response = curl_exec($ch);
+            curl_close($ch);
 
-        return json_decode($response, true);
+            return json_decode($response, true);
+        } catch (\Throwable $e) {
+            $this->logger->error("Exception sending STK Push", ['exception' => $e->getMessage()]);
+            return null;
+        }
     }
 
     private function savePendingTransaction(int $clientId, int $packageId, float $amount, string $phone, array $stkResponse): ?string
     {
-        $merchantRequestId = $stkResponse['MerchantRequestID'] ?? null;
-        $checkoutRequestId = $stkResponse['CheckoutRequestID'] ?? null;
+        try {
+            $merchantRequestId = $stkResponse['MerchantRequestID'] ?? null;
+            $checkoutRequestId = $stkResponse['CheckoutRequestID'] ?? null;
 
-        $insert = [
-            'client_id' => $clientId,
-            'package_id' => $packageId,
-            'transaction_id' => null,
-            'merchant_request_id' => $merchantRequestId,
-            'checkout_request_id' => $checkoutRequestId,
-            'amount' => $amount,
-            'phone_number' => $phone,
-            'status' => 'Pending',
-            'created_at' => date('Y-m-d H:i:s'),
-        ];
+            $insert = [
+                'client_id' => $clientId,
+                'package_id' => $packageId,
+                'transaction_id' => null,
+                'merchant_request_id' => $merchantRequestId,
+                'checkout_request_id' => $checkoutRequestId,
+                'amount' => $amount,
+                'phone_number' => $phone,
+                'status' => 'Pending',
+                'created_at' => date('Y-m-d H:i:s'),
+            ];
 
-        $this->transactionModel->insert($insert);
+            $this->transactionModel->insert($insert);
 
-        $this->logger->info("STK Push transaction saved", [
-            'checkoutRequestID' => $checkoutRequestId,
-            'insert_id' => $this->transactionModel->getInsertID()
-        ]);
+            $this->logger->info("STK Push transaction saved", [
+                'checkoutRequestID' => $checkoutRequestId,
+                'insert_id' => $this->transactionModel->getInsertID()
+            ]);
 
-        return $checkoutRequestId;
+            return $checkoutRequestId;
+        } catch (\Throwable $e) {
+            $this->logger->error("Exception saving pending transaction", ['exception' => $e->getMessage()]);
+            return null;
+        }
+    }
+
+    private function createFallbackTransaction(int $clientId, int $packageId, float $amount, string $phone): ?string
+    {
+        try {
+            $insert = [
+                'client_id' => $clientId,
+                'package_id' => $packageId,
+                'transaction_id' => 'TEMP_' . substr(md5(microtime()), 0, 8),
+                'merchant_request_id' => 'N/A',
+                'checkout_request_id' => 'N/A',
+                'amount' => $amount,
+                'phone_number' => $phone,
+                'status' => 'Pending',
+                'created_at' => date('Y-m-d H:i:s'),
+            ];
+
+            $this->transactionModel->insert($insert);
+            return $this->transactionModel->getInsertID();
+        } catch (\Throwable $e) {
+            $this->logger->error("Failed to create fallback pending transaction", ['exception' => $e->getMessage()]);
+            return null;
+        }
     }
 
     /**
@@ -236,20 +275,25 @@ class MpesaService
 
         if (empty($mpesaReceipt)) $mpesaReceipt = 'UNKNOWN_' . $transaction['id'];
 
-        // Update mpesa_transactions
-        $this->transactionModel->update($transaction['id'], [
-            'amount' => $amount ?? $transaction['amount'],
-            'phone_number' => $phone ?? $transaction['phone_number'],
-            'mpesa_receipt_number' => $mpesaReceipt,
-            'transaction_date' => $transactionDate ?? $transaction['transaction_date'],
-            'status' => 'Success',
-            'result_code' => 0,
-            'result_desc' => $resultDesc,
-            'updated_at' => date('Y-m-d H:i:s')
-        ]);
+        // Update mpesa_transactions safely
+        try {
+            $this->transactionModel->update($transaction['id'], [
+                'amount' => $amount ?? $transaction['amount'],
+                'phone_number' => $phone ?? $transaction['phone_number'],
+                'mpesa_receipt_number' => $mpesaReceipt,
+                'transaction_date' => $transactionDate ?? $transaction['transaction_date'],
+                'status' => 'Success',
+                'result_code' => 0,
+                'result_desc' => $resultDesc,
+                'updated_at' => date('Y-m-d H:i:s')
+            ]);
+        } catch (\Throwable $e) {
+            $this->logger->error("Failed to update mpesa_transactions", ['exception' => $e->getMessage()]);
+        }
 
         $this->db->transStart();
         try {
+            // Payments
             $paymentRow = $this->paymentsModel->where('mpesa_transaction_id', $transaction['id'])->first();
             $paymentData = [
                 'mpesa_transaction_id' => $transaction['id'],
@@ -271,8 +315,8 @@ class MpesaService
                 $paymentId = $this->paymentsModel->insert($paymentData, true);
             }
 
+            // Subscriptions
             $subscriptionModel = new \App\Models\SubscriptionModel();
-            // Expire existing subscriptions
             $existingSubs = $subscriptionModel->where('client_id', $transaction['client_id'])
                 ->where('package_id', $transaction['package_id'])
                 ->where('status', 'active')
@@ -282,7 +326,6 @@ class MpesaService
                 $subscriptionModel->update($sub['id'], ['status' => 'expired', 'updated_at' => date('Y-m-d H:i:s')]);
             }
 
-            // Insert new subscription
             $startDate = date('Y-m-d H:i:s');
             $expiresOn = date('Y-m-d H:i:s', strtotime('+'.$transaction['package_id'].' minutes')); // adjust duration logic
 
@@ -311,16 +354,14 @@ class MpesaService
                 'package_name' => $package['name'] ?? null,
                 'package_type' => $package['type'] ?? null
             ]);
-            $this->logger->info("Router activation placeholder succeeded", ['subscription_id' => $subId, 'router_id' => $routerId]);
 
-            // Activate subscription
             $activationService = new ActivationService($this->logger);
             $activationService->activate($transaction['client_id'], $transaction['package_id'], (float)$amount);
 
             $this->db->transComplete();
         } catch (\Throwable $e) {
             $this->db->transRollback();
-            $this->logger->error("Exception during payments/subscriptions transaction", ['err' => $e->getMessage()]);
+            $this->logger->error("Exception during payments/subscriptions transaction", ['exception' => $e->getMessage()]);
         }
 
         $this->logger->info("Callback processing finished successfully", [
@@ -353,19 +394,23 @@ class MpesaService
             $this->transactionModel->insert($data);
             return $this->transactionModel->where('checkout_request_id', $checkoutRequestId)->first();
         } catch (\Throwable $e) {
-            $this->logger->error("Exception in safeInsertTransaction", ['err' => $e->getMessage()]);
+            $this->logger->error("Exception in safeInsertTransaction", ['exception' => $e->getMessage()]);
             return null;
         }
     }
 
     private function markTransactionFailed(array $transaction, int $resultCode, string $resultDesc): array
     {
-        $this->transactionModel->update($transaction['id'], [
-            'status' => 'Failed',
-            'result_code' => $resultCode,
-            'result_desc' => $resultDesc,
-            'updated_at' => date('Y-m-d H:i:s')
-        ]);
+        try {
+            $this->transactionModel->update($transaction['id'], [
+                'status' => 'Failed',
+                'result_code' => $resultCode,
+                'result_desc' => $resultDesc,
+                'updated_at' => date('Y-m-d H:i:s')
+            ]);
+        } catch (\Throwable $e) {
+            $this->logger->error("Failed to update transaction as failed", ['exception' => $e->getMessage()]);
+        }
 
         $this->db->transStart();
         try {

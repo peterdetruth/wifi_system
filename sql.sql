@@ -431,3 +431,8 @@ CREATE TABLE `feature_requests` (
     `updated_at` DATETIME NULL,
     PRIMARY KEY (`id`)
 );
+
+-- NEW UPDATES
+ALTER TABLE mpesa_transactions
+MODIFY COLUMN status ENUM('pending','success','failed') DEFAULT 'pending';
+

@@ -46,21 +46,59 @@ class Mpesa extends BaseController
         ?string $merchantRequestId = null,
         ?string $checkoutRequestId = null
     ) {
-        // Call MpesaService with all required arguments
-        $success = $this->mpesaService->initiateTransaction(
-            $clientId,
-            $packageId,
-            $amount,
-            $phone,
-            $merchantRequestId,
-            $checkoutRequestId
-        );
+        try {
+            // Initiate transaction safely; service will create pending record if anything fails
+            $success = $this->mpesaService->initiateTransaction(
+                $clientId,
+                $packageId,
+                $amount,
+                $phone,
+                $merchantRequestId,
+                $checkoutRequestId
+            );
 
-        if ($success) {
-            return $this->respond(['status' => 'ok'], 200);
+            if ($success) {
+                return $this->respond(['status' => 'ok'], 200);
+            }
+
+            // If initiation fails, create a pending transaction to ensure no user loss
+            $this->paymentsModel->insert([
+                'client_id'             => $clientId,
+                'package_id'            => $packageId,
+                'amount'                => $amount,
+                'payment_method'        => 'mpesa',
+                'status'                => 'pending',
+                'phone'                 => $phone,
+                'transaction_date'      => date('Y-m-d H:i:s'),
+                'mpesa_transaction_id'  => null,
+                'mpesa_receipt_number'  => null
+            ]);
+
+            return $this->respond([
+                'status'  => 'pending',
+                'message' => 'Transaction could not be completed immediately. Pending record created.'
+            ], 202);
+        } catch (\Throwable $e) {
+            // Log error and create pending record
+            log_message('error', 'Mpesa initiateTransaction failed: ' . $e->getMessage());
+
+            $this->paymentsModel->insert([
+                'client_id'             => $clientId,
+                'package_id'            => $packageId,
+                'amount'                => $amount,
+                'payment_method'        => 'mpesa',
+                'status'                => 'pending',
+                'phone'                 => $phone,
+                'transaction_date'      => date('Y-m-d H:i:s'),
+                'mpesa_transaction_id'  => null,
+                'mpesa_receipt_number'  => null
+            ]);
+
+            return $this->respond([
+                'status'  => 'pending',
+                'message' => 'Error occurred, pending transaction created. Please check your payment later.'
+            ], 500);
         }
-
-        return $this->failServerError('Failed to initiate transaction');
     }
 
     /**
@@ -73,12 +111,32 @@ class Mpesa extends BaseController
             $request = $this->request;
             $data = $request->getJSON(true);
 
-            // Delegate to MpesaService
+            if (!$data) {
+                log_message('error', 'Mpesa callback received empty or invalid JSON.');
+                return $this->fail('Invalid callback data', 400);
+            }
+
+            // Delegate to MpesaService for processing
             $response = $this->mpesaService->handleCallback($data);
+
+            // Ensure callback failures do not break the system
+            if (!isset($response['success']) || !$response['success']) {
+                log_message('error', 'Mpesa callback handling failed: ' . json_encode($data));
+                return $this->respond([
+                    'status'  => 'error',
+                    'message' => 'Callback processed partially. Manual check may be required.'
+                ], 200);
+            }
 
             return $this->respond($response, 200);
         } catch (\Throwable $e) {
-            return $this->failServerError($e->getMessage());
+            log_message('error', 'Mpesa callback exception: ' . $e->getMessage());
+
+            // Do not throw error to M-PESA, return 200 with error info to avoid retries
+            return $this->respond([
+                'status'  => 'error',
+                'message' => 'Callback processing error. Admin should verify the transaction.'
+            ], 200);
         }
     }
 }
