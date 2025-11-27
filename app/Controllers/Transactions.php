@@ -3,34 +3,37 @@
 namespace App\Controllers;
 
 use App\Controllers\BaseController;
-use App\Models\TransactionModel;
+use App\Models\MpesaTransactionModel;
 use App\Models\ClientModel;
 use App\Models\PackageModel;
 use Config\Database;
 
 class Transactions extends BaseController
 {
-    protected $transactionModel;
+    protected $mpesaTransactionModel;
     protected $clientModel;
     protected $packageModel;
 
     public function __construct()
     {
-        helper('filesystem');
-        $this->transactionModel = new TransactionModel();
-        $this->clientModel = new ClientModel();
-        $this->packageModel = new PackageModel();
+        helper(['filesystem', 'url']);
+
+        $this->mpesaTransactionModel = new MpesaTransactionModel();
+        $this->clientModel           = new ClientModel();
+        $this->packageModel          = new PackageModel();
     }
 
     protected function checkLogin()
     {
         if (!session()->get('isLoggedIn')) {
-            return redirect()->to('/login')->with('error', 'Please login')->send();
+            return redirect()->to('/login')
+                ->with('error', 'Please login')
+                ->send();
         }
     }
 
     /**
-     * List all transactions (with filters)
+     * List all M-PESA transactions (Admin + Filters)
      */
     public function index()
     {
@@ -42,28 +45,33 @@ class Transactions extends BaseController
         $dateFrom  = $this->request->getGet('date_from');
         $dateTo    = $this->request->getGet('date_to');
 
-        $builder = $this->transactionModel
-            ->select('transactions.*, packages.name AS package_name, clients.username AS client_username')
-            ->join('packages', 'packages.id = transactions.package_id', 'left')
-            ->join('clients', 'clients.id = transactions.client_id', 'left');
+        $builder = $this->mpesaTransactionModel
+            ->select('
+                mpesa_transactions.*,
+                packages.name AS package_name,
+                clients.username AS client_username
+            ')
+            ->join('packages', 'packages.id = mpesa_transactions.package_id', 'left')
+            ->join('clients', 'clients.id = mpesa_transactions.client_id', 'left');
 
-        if ($clientId) {
-            $builder->where('transactions.client_id', $clientId);
+        // Apply filters
+        if (!empty($clientId)) {
+            $builder->where('mpesa_transactions.client_id', $clientId);
         }
 
-        if ($packageId) {
-            $builder->where('transactions.package_id', $packageId);
+        if (!empty($packageId)) {
+            $builder->where('mpesa_transactions.package_id', $packageId);
         }
 
-        if ($dateFrom) {
-            $builder->where('DATE(transactions.created_on) >=', $dateFrom);
+        if (!empty($dateFrom)) {
+            $builder->where('DATE(mpesa_transactions.created_at) >=', $dateFrom);
         }
 
-        if ($dateTo) {
-            $builder->where('DATE(transactions.created_on) <=', $dateTo);
+        if (!empty($dateTo)) {
+            $builder->where('DATE(mpesa_transactions.created_at) <=', $dateTo);
         }
 
-        $builder->orderBy('transactions.created_on', 'DESC');
+        $builder->orderBy('mpesa_transactions.created_at', 'DESC');
 
         $data['transactions'] = $builder->findAll();
         $data['clients']      = $this->clientModel->orderBy('id', 'DESC')->findAll();
@@ -73,7 +81,7 @@ class Transactions extends BaseController
     }
 
     /**
-     * Export filtered data to CSV
+     * Export filtered M-PESA transactions to CSV
      */
     public function export()
     {
@@ -85,40 +93,55 @@ class Transactions extends BaseController
         $dateFrom  = $this->request->getGet('date_from');
         $dateTo    = $this->request->getGet('date_to');
 
-        $builder = $this->transactionModel
-            ->select('transactions.*, packages.name AS package_name, clients.username AS client_username')
-            ->join('packages', 'packages.id = transactions.package_id', 'left')
-            ->join('clients', 'clients.id = transactions.client_id', 'left');
+        $builder = $this->mpesaTransactionModel
+            ->select('
+                mpesa_transactions.*,
+                packages.name AS package_name,
+                clients.username AS client_username
+            ')
+            ->join('packages', 'packages.id = mpesa_transactions.package_id', 'left')
+            ->join('clients', 'clients.id = mpesa_transactions.client_id', 'left');
 
-        if ($clientId)  $builder->where('transactions.client_id', $clientId);
-        if ($packageId) $builder->where('transactions.package_id', $packageId);
-        if ($dateFrom)  $builder->where('DATE(transactions.created_on) >=', $dateFrom);
-        if ($dateTo)    $builder->where('DATE(transactions.created_on) <=', $dateTo);
+        if (!empty($clientId))  $builder->where('mpesa_transactions.client_id', $clientId);
+        if (!empty($packageId)) $builder->where('mpesa_transactions.package_id', $packageId);
+        if (!empty($dateFrom))  $builder->where('DATE(mpesa_transactions.created_at) >=', $dateFrom);
+        if (!empty($dateTo))    $builder->where('DATE(mpesa_transactions.created_at) <=', $dateTo);
 
-        $rows = $builder->orderBy('transactions.created_on', 'DESC')->findAll();
+        $rows = $builder
+            ->orderBy('mpesa_transactions.created_at', 'DESC')
+            ->findAll();
 
-        // Create CSV
-        $filename = "transactions_export_" . date('Ymd_His') . ".csv";
+        // CSV Output
+        $filename = "mpesa_transactions_export_" . date('Ymd_His') . ".csv";
+
         header("Content-Type: text/csv");
         header("Content-Disposition: attachment; filename={$filename}");
 
         $file = fopen('php://output', 'w');
 
-        // Header
+        // CSV Header
         fputcsv($file, [
-            'ID', 'Client', 'Package', 'Amount', 'Status',
-            'Mpesa Receipt', 'Created On'
+            'ID',
+            'Client Username',
+            'Package Name',
+            'Amount',
+            'Phone',
+            'M-PESA Receipt',
+            'Status',
+            'Created At'
         ]);
 
-        foreach ($rows as $t) {
+        // Rows
+        foreach ($rows as $row) {
             fputcsv($file, [
-                $t['id'],
-                $t['client_username'],
-                $t['package_name'],
-                $t['amount'],
-                $t['status'],
-                $t['mpesa_receipt_number'],
-                $t['created_on'],
+                $row['id'],
+                $row['client_username'],
+                $row['package_name'],
+                $row['amount'],
+                $row['phone'],
+                $row['mpesa_receipt'],
+                $row['status'],
+                $row['created_at'],
             ]);
         }
 
@@ -126,49 +149,85 @@ class Transactions extends BaseController
         exit();
     }
 
+    /**
+     * Store transaction (manual admin creation)
+     */
     public function store()
     {
         try {
             $data = $this->request->getPost();
 
-            if ($this->transactionModel->save($data)) {
-                return redirect()->to('/admin/transactions')->with('success', 'Transaction created successfully.');
+            if ($this->mpesaTransactionModel->save($data)) {
+                return redirect()
+                    ->to('/admin/transactions')
+                    ->with('success', 'Transaction created successfully.');
             }
 
-            $dbError = $this->transactionModel->errors() ?: Database::connect()->error();
-            return redirect()->back()->withInput()->with('error', 'Failed to create transaction: ' . print_r($dbError, true));
+            $dbError = $this->mpesaTransactionModel->errors() ?: Database::connect()->error();
+
+            return redirect()
+                ->back()
+                ->withInput()
+                ->with('error', 'Failed to create transaction: ' . print_r($dbError, true));
+
         } catch (\Exception $e) {
-            return redirect()->back()->withInput()->with('error', 'Error: ' . $e->getMessage());
+            return redirect()
+                ->back()
+                ->withInput()
+                ->with('error', 'Error: ' . $e->getMessage());
         }
     }
 
+    /**
+     * Update an existing transaction
+     */
     public function update($id)
     {
         try {
             $data = $this->request->getPost();
 
-            if ($this->transactionModel->update($id, $data)) {
-                return redirect()->to('/admin/transactions')->with('success', 'Transaction updated successfully.');
+            if ($this->mpesaTransactionModel->update($id, $data)) {
+                return redirect()
+                    ->to('/admin/transactions')
+                    ->with('success', 'Transaction updated successfully.');
             }
 
-            $dbError = $this->transactionModel->errors() ?: Database::connect()->error();
-            return redirect()->back()->withInput()->with('error', 'Failed to update: ' . print_r($dbError, true));
+            $dbError = $this->mpesaTransactionModel->errors() ?: Database::connect()->error();
+
+            return redirect()
+                ->back()
+                ->withInput()
+                ->with('error', 'Failed to update transaction: ' . print_r($dbError, true));
+
         } catch (\Exception $e) {
-            return redirect()->back()->withInput()->with('error', 'Error: ' . $e->getMessage());
+            return redirect()
+                ->back()
+                ->with('error', 'Error: ' . $e->getMessage());
         }
     }
 
+    /**
+     * Delete a transaction
+     */
     public function delete($id)
     {
         try {
-            if ($this->transactionModel->delete($id)) {
-                return redirect()->to('/admin/transactions')->with('success', 'Transaction deleted successfully.');
+            if ($this->mpesaTransactionModel->delete($id)) {
+                return redirect()
+                    ->to('/admin/transactions')
+                    ->with('success', 'Transaction deleted successfully.');
             }
 
             $dbError = Database::connect()->error();
-            return redirect()->to('/admin/transactions')->with('error', 'Failed to delete: ' . print_r($dbError, true));
+
+            return redirect()
+                ->to('/admin/transactions')
+                ->with('error', 'Failed to delete transaction: ' . print_r($dbError, true));
+
         } catch (\Exception $e) {
-            return redirect()->to('/admin/transactions')->with('error', 'Error: ' . $e->getMessage());
+            return redirect()
+                ->to('/admin/transactions')
+                ->with('error', 'Error: ' . $e->getMessage());
         }
     }
 }
