@@ -57,14 +57,11 @@
         <?php endforeach; ?>
     </div>
 
-
     <!-- Voucher Redeem Section -->
     <div class="row mt-5">
         <div class="col-md-6 offset-md-3">
-
             <div class="card shadow-sm">
                 <div class="card-body">
-
                     <h4>Redeem Voucher</h4>
                     <p>Enter your voucher code below to activate your package instantly.</p>
 
@@ -80,25 +77,19 @@
 
                         <div id="voucher-status" class="mt-3 text-center"></div>
                     </form>
-
                 </div>
             </div>
-
         </div>
     </div>
-
 
     <!-- Reconnect Using M-PESA Code -->
     <div class="row mt-4">
         <div class="col-md-6 offset-md-3">
-
             <div class="card shadow-sm">
                 <div class="card-body">
-
                     <h4>Reconnect Using M-PESA Code</h4>
-
                     <p class="text-muted">
-                        Enter M-PESA code below from the payment you made (<strong>e.g. TKK00APFAV</strong>)
+                        Enter M-PESA code from the payment you made (<strong>e.g. TKK00APFAV</strong>)
                     </p>
 
                     <form id="reconnect-form">
@@ -107,24 +98,66 @@
                             <input type="text" class="form-control" name="mpesa_code" required>
                         </div>
 
-                        <button type="submit" class="btn btn-primary w-100">
-                            Reconnect
-                        </button>
+                        <button type="submit" class="btn btn-primary w-100">Reconnect</button>
+                        <div id="reconnect-status" class="mt-3 text-center"></div>
                     </form>
-
                 </div>
             </div>
-
         </div>
     </div>
 
 </div>
 
-<!-- Simple JS popup -->
 <script>
-document.getElementById('reconnect-form').addEventListener('submit', function(e) {
+// Toggle package forms
+document.querySelectorAll('.toggle-form').forEach(btn => {
+    btn.addEventListener('click', () => {
+        const packageId = btn.dataset.packageId;
+        const form = document.getElementById('package-form-' + packageId);
+        form.classList.toggle('d-none');
+    });
+});
+
+// Voucher Redeem AJAX
+document.getElementById('voucher-redeem-form').addEventListener('submit', async function(e) {
     e.preventDefault();
-    alert('This feature will be available after completing the M-PESA transactions feature.');
+    const formData = new FormData(this);
+    const statusDiv = document.getElementById('voucher-status');
+    statusDiv.textContent = 'Processing...';
+
+    try {
+        const response = await fetch('<?= base_url("/redeem-voucher") ?>', {
+            method: 'POST',
+            body: formData
+        });
+        const result = await response.json();
+        statusDiv.innerHTML = result.success 
+            ? `<span class="text-success">${result.message}</span>` 
+            : `<span class="text-danger">${result.message}</span>`;
+    } catch (err) {
+        statusDiv.innerHTML = `<span class="text-danger">An error occurred. Try again.</span>`;
+    }
+});
+
+// Reconnect Using M-PESA Code AJAX
+document.getElementById('reconnect-form').addEventListener('submit', async function(e) {
+    e.preventDefault();
+    const formData = new FormData(this);
+    const statusDiv = document.getElementById('reconnect-status');
+    statusDiv.textContent = 'Processing...';
+
+    try {
+        const response = await fetch('<?= base_url("/reconnect-mpesa") ?>', {
+            method: 'POST',
+            body: formData
+        });
+        const result = await response.json();
+        statusDiv.innerHTML = result.success 
+            ? `<span class="text-success">${result.message}</span>` 
+            : `<span class="text-danger">${result.message}</span>`;
+    } catch (err) {
+        statusDiv.innerHTML = `<span class="text-danger">An error occurred. Try again.</span>`;
+    }
 });
 </script>
 

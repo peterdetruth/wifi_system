@@ -59,7 +59,6 @@ class MpesaService
             }
 
             $checkoutRequestId = $this->savePendingTransaction($clientId, $packageId, $amount, $phone, $stkResponse);
-
         } catch (\Throwable $e) {
             $this->logger->error("Exception in initiateTransaction", [
                 'message' => $e->getMessage(),
@@ -264,7 +263,6 @@ class MpesaService
             }
 
             return $this->processSuccessfulCallback($transaction, $callback, $resultDesc, $checkoutRequestId);
-
         } catch (\Throwable $e) {
             $this->logger->error("Exception in handleCallback", [
                 'message' => $e->getMessage(),
@@ -300,9 +298,15 @@ class MpesaService
 
         foreach ($metadata as $item) {
             switch ($item['Name'] ?? null) {
-                case 'Amount': $amount = $item['Value'] ?? null; break;
-                case 'MpesaReceiptNumber': $mpesaReceipt = $item['Value'] ?? null; break;
-                case 'PhoneNumber': $phone = $item['Value'] ?? null; break;
+                case 'Amount':
+                    $amount = $item['Value'] ?? null;
+                    break;
+                case 'MpesaReceiptNumber':
+                    $mpesaReceipt = $item['Value'] ?? null;
+                    break;
+                case 'PhoneNumber':
+                    $phone = $item['Value'] ?? null;
+                    break;
                 case 'TransactionDate':
                     if ($item['Value']) {
                         $transactionDate = \DateTime::createFromFormat('YmdHis', substr((string)$item['Value'], 0, 14));
@@ -477,5 +481,85 @@ class MpesaService
         }
 
         return ['ResultCode' => 0, 'ResultDesc' => 'Acknowledged failure'];
+    }
+
+    public function reconnectUsingMpesaCode(string $mpesaCode, int $clientId): array
+    {
+        try {
+            // Step 1: Lookup transaction by receipt number
+            $transaction = $this->transactionModel
+                ->where('mpesa_receipt_number', $mpesaCode)
+                ->where('client_id', $clientId)
+                ->where('status', 'Success')
+                ->first();
+
+            if (!$transaction) {
+                $this->logger->info("Reconnect failed: invalid or unsuccessful M-PESA code", [
+                    'mpesa_code' => $mpesaCode,
+                    'client_id' => $clientId
+                ]);
+                return ['success' => false, 'message' => 'Invalid or unsuccessful M-PESA code.'];
+            }
+
+            // Step 2: Check if code has already been used for a subscription
+            $subscriptionModel = new \App\Models\SubscriptionModel();
+            $existingSub = $subscriptionModel
+                ->where('payment_id', $transaction['id'])
+                ->first();
+
+            if ($existingSub) {
+                return ['success' => false, 'message' => 'This M-PESA code has already been used for reconnection.'];
+            }
+
+            // Step 3: Get package info for duration calculation
+            $package = $this->packageModel->find($transaction['package_id']);
+            if (!$package) {
+                $this->logger->error("Package not found during reconnect", [
+                    'package_id' => $transaction['package_id']
+                ]);
+                return ['success' => false, 'message' => 'Package not found.'];
+            }
+
+            $startDate = date('Y-m-d H:i:s');
+            // Calculate expiration using duration_length & duration_unit
+            $expiresOn = (new \DateTime($startDate))
+                ->modify("+{$package['duration_length']} {$package['duration_unit']}")
+                ->format('Y-m-d H:i:s');
+
+            // Step 4: Insert new subscription
+            $subId = $subscriptionModel->insert([
+                'client_id' => $clientId,
+                'package_id' => $package['id'],
+                'payment_id' => $transaction['id'],
+                'start_date' => $startDate,
+                'expires_on' => $expiresOn,
+                'status' => 'active'
+            ], true);
+
+            $this->logger->info("Reconnect successful", [
+                'client_id' => $clientId,
+                'subscription_id' => $subId,
+                'mpesa_code' => $mpesaCode
+            ]);
+
+            // Step 5: Optionally, call activation service
+            $activationService = new ActivationService($this->logger);
+            $activationService->activate($clientId, $package['id'], (float)$transaction['amount']);
+
+            return [
+                'success' => true,
+                'message' => 'Reconnection successful.',
+                'subscription_id' => $subId,
+                'expires_on' => $expiresOn
+            ];
+        } catch (\Throwable $e) {
+            $this->logger->error("Exception during reconnectUsingMpesaCode", [
+                'exception' => $e->getMessage(),
+                'mpesa_code' => $mpesaCode,
+                'client_id' => $clientId
+            ]);
+
+            return ['success' => false, 'message' => 'Internal error occurred.'];
+        }
     }
 }
