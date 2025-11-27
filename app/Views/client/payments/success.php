@@ -1,4 +1,4 @@
-<?= $this->extend('client/layout') ?>
+<?= $this->extend('layouts/client_layout') ?>
 <?= $this->section('content') ?>
 
 <div class="container mt-5">
