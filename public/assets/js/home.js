@@ -132,7 +132,8 @@ document.addEventListener('DOMContentLoaded', function() {
                 const formData = new FormData();
                 formData.append('mpesa_code', code);
 
-                const res = await fetch('/client/payments/reconnect-mpesa', {
+                // FIXED ENDPOINT HERE
+                const res = await fetch('/reconnect-mpesa', {
                     method: 'POST',
                     body: formData
                 });

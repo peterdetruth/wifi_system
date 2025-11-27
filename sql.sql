@@ -436,3 +436,31 @@ CREATE TABLE `feature_requests` (
 ALTER TABLE mpesa_transactions
 MODIFY COLUMN status ENUM('pending','success','failed') DEFAULT 'pending';
 
+INSERT INTO payments (
+    mpesa_transaction_id,
+    client_id,
+    package_id,
+    amount,
+    payment_method,
+    status,
+    mpesa_receipt_number,
+    phone,
+    transaction_date,
+    mpesa_receipt
+) VALUES (
+    999999,         -- fake mpesa_transaction_id
+    1,              -- CHANGE THIS to your client_id from session()
+    3,              -- CHANGE THIS to the package you want to test
+    200.00,         -- CHANGE THIS to the correct package price
+    'mpesa',
+    'failed',       -- this is key for reconnect
+    'TKK00APFAV',   -- this is the reconnect code you will test
+    '0700000000',   -- fake phone
+    NOW(),
+    'TKK00APFAV'    -- duplicate for mpesa_receipt (your system uses both)
+);
+
+UPDATE payments
+SET status = 'failed'
+WHERE mpesa_receipt_number = 'TKRQSBBVPA';
+

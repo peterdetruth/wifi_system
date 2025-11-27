@@ -176,6 +176,7 @@ $routes->group('client', ['namespace' => 'App\Controllers\Client'], static funct
     });
 });
 
+$routes->post('reconnect-mpesa', 'Home::reconnectMpesa');
 
 // ==============================
 // TEST ROUTES
