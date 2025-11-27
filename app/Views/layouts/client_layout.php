@@ -63,13 +63,6 @@
             </li>
 
             <li class="nav-item">
-              <a class="nav-link d-flex align-items-center <?= url_is('client/vouchers/redeem*') ? 'active' : '' ?>"
-                 href="<?= base_url('client/vouchers/redeem') ?>">
-                 <i class="bi bi-ticket-perforated me-1"></i> Redeem
-              </a>
-            </li>
-
-            <li class="nav-item">
               <a class="nav-link d-flex align-items-center <?= url_is('client/profile*') ? 'active' : '' ?>"
                  href="<?= base_url('client/profile') ?>">
                  <i class="bi bi-person-circle me-1"></i> Profile
