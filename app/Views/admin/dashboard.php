@@ -27,25 +27,7 @@ $voucherValuesJson = htmlspecialchars(json_encode($voucherValues ?? []), ENT_QUO
     <div class="container-fluid py-3">
         <h3 class="mb-4">Admin Dashboard</h3>
 
-        <!-- Filters -->
-        <div class="row mb-3">
-            <div class="col-md-6">
-                <form method="GET" class="d-flex align-items-center">
-                    <label class="me-2">Month:</label>
-                    <input type="number" name="month" min="1" max="12" class="form-control me-2" value="<?= esc($month ?? date('m')) ?>">
-                    <label class="me-2">Year:</label>
-                    <input type="number" name="year" class="form-control me-2" value="<?= esc($year ?? date('Y')) ?>">
-                    <button type="submit" class="btn btn-primary">Filter</button>
-                </form>
-            </div>
-            <div class="col-md-2 text-end">
-                <a href="<?= site_url('admin/dashboard/exportRevenueCSV?month=' . ($month ?? date('m')) . '&year=' . ($year ?? date('Y'))) ?>" class="btn btn-success">
-                    Export CSV
-                </a>
-            </div>
-        </div>
-
-        <!-- KPI Cards -->
+        <!-- KPI Cards (unchanged) -->
         <div class="row g-3 mb-4">
             <div class="col-md-3">
                 <div class="card kpi-card">
@@ -55,7 +37,6 @@ $voucherValuesJson = htmlspecialchars(json_encode($voucherValues ?? []), ENT_QUO
                     </div>
                 </div>
             </div>
-
             <div class="col-md-3">
                 <div class="card kpi-card">
                     <div class="card-body text-center">
@@ -64,7 +45,6 @@ $voucherValuesJson = htmlspecialchars(json_encode($voucherValues ?? []), ENT_QUO
                     </div>
                 </div>
             </div>
-
             <div class="col-md-3">
                 <div class="card kpi-card">
                     <div class="card-body text-center">
@@ -73,7 +53,6 @@ $voucherValuesJson = htmlspecialchars(json_encode($voucherValues ?? []), ENT_QUO
                     </div>
                 </div>
             </div>
-
             <div class="col-md-3">
                 <div class="card kpi-card">
                     <div class="card-body text-center">
@@ -84,7 +63,7 @@ $voucherValuesJson = htmlspecialchars(json_encode($voucherValues ?? []), ENT_QUO
             </div>
         </div>
 
-        <!-- Secondary KPIs -->
+        <!-- Secondary KPIs (unchanged) -->
         <div class="row g-3 mb-4">
             <div class="col-md-3">
                 <div class="card kpi-card-alt">
@@ -94,7 +73,6 @@ $voucherValuesJson = htmlspecialchars(json_encode($voucherValues ?? []), ENT_QUO
                     </div>
                 </div>
             </div>
-
             <div class="col-md-3">
                 <div class="card kpi-card-alt">
                     <div class="card-body text-center">
@@ -103,7 +81,6 @@ $voucherValuesJson = htmlspecialchars(json_encode($voucherValues ?? []), ENT_QUO
                     </div>
                 </div>
             </div>
-
             <div class="col-md-3">
                 <div class="card kpi-card-alt">
                     <div class="card-body text-center">
@@ -112,7 +89,6 @@ $voucherValuesJson = htmlspecialchars(json_encode($voucherValues ?? []), ENT_QUO
                     </div>
                 </div>
             </div>
-
             <div class="col-md-3">
                 <div class="card kpi-card-alt">
                     <div class="card-body text-center">
@@ -123,7 +99,7 @@ $voucherValuesJson = htmlspecialchars(json_encode($voucherValues ?? []), ENT_QUO
             </div>
         </div>
 
-        <!-- Charts -->
+        <!-- Charts (unchanged) -->
         <div class="row g-4 mb-4">
             <div class="col-md-6">
                 <div class="card shadow-sm">
@@ -131,7 +107,6 @@ $voucherValuesJson = htmlspecialchars(json_encode($voucherValues ?? []), ENT_QUO
                     <div class="card-body"><canvas id="revenueChart"></canvas></div>
                 </div>
             </div>
-
             <div class="col-md-6">
                 <div class="card shadow-sm">
                     <div class="card-header bg-light"><strong>Voucher Usage (<?= esc($month ?? date('m')) ?>/<?= esc($year ?? date('Y')) ?>)</strong></div>
@@ -161,8 +136,8 @@ $voucherValuesJson = htmlspecialchars(json_encode($voucherValues ?? []), ENT_QUO
                             <?php $i = 1; foreach ($expiringSoon as $s): ?>
                                 <tr>
                                     <td><?= $i++ ?></td>
-                                    <td><?= esc($s['client_username'] ?? $s['client_id']) ?></td>
-                                    <td><?= esc($s['package_name'] ?? $s['package_id']) ?></td>
+                                    <td><?= esc($s['client_username']) ?></td>
+                                    <td><?= esc($s['package_name']) ?></td>
                                     <td><?= date('d M Y, H:i', strtotime($s['expires_on'])) ?></td>
                                     <td><span class="countdown" data-expiry="<?= esc($s['expires_on']) ?>"></span></td>
                                 </tr>
@@ -173,10 +148,10 @@ $voucherValuesJson = htmlspecialchars(json_encode($voucherValues ?? []), ENT_QUO
             </div>
         </div>
 
-        <!-- Recent Activity -->
-        <div class="row g-4 mt-4">
+        <!-- Recent Payments -->
+        <div class="row g-4">
             <div class="col-md-6">
-                <div class="card shadow-sm">
+                <div class="card shadow-sm mb-4">
                     <div class="card-header bg-light"><strong>Recent Payments</strong></div>
                     <div class="card-body p-0">
                         <?php if (empty($recentTransactions)): ?>
@@ -184,13 +159,20 @@ $voucherValuesJson = htmlspecialchars(json_encode($voucherValues ?? []), ENT_QUO
                         <?php else: ?>
                             <table class="table table-striped mb-0">
                                 <thead>
-                                    <tr><th>ID</th><th>Client</th><th>Amount</th><th>Status</th></tr>
+                                    <tr>
+                                        <th>ID</th>
+                                        <th>Client</th>
+                                        <th>Package</th>
+                                        <th>Amount</th>
+                                        <th>Status</th>
+                                    </tr>
                                 </thead>
                                 <tbody>
                                     <?php foreach ($recentTransactions as $t): ?>
                                         <tr>
                                             <td>#<?= esc($t['id']) ?></td>
-                                            <td><?= esc($t['client_username'] ?? $t['client_id']) ?></td>
+                                            <td><?= esc($t['client_username']) ?></td>
+                                            <td><?= esc($t['package_name']) ?></td>
                                             <td>KES <?= number_format($t['amount'], 2) ?></td>
                                             <td>
                                                 <span class="badge <?= ($t['status'] === 'completed') ? 'bg-success' : (($t['status'] === 'failed') ? 'bg-danger' : 'bg-warning text-dark') ?>">
@@ -206,8 +188,9 @@ $voucherValuesJson = htmlspecialchars(json_encode($voucherValues ?? []), ENT_QUO
                 </div>
             </div>
 
+            <!-- Recent Clients -->
             <div class="col-md-6">
-                <div class="card shadow-sm">
+                <div class="card shadow-sm mb-4">
                     <div class="card-header bg-light"><strong>Recent Clients</strong></div>
                     <div class="card-body p-0">
                         <?php if (empty($recentClients)): ?>
@@ -220,7 +203,7 @@ $voucherValuesJson = htmlspecialchars(json_encode($voucherValues ?? []), ENT_QUO
                                         <tr>
                                             <td><?= esc($c['id']) ?></td>
                                             <td><?= esc($c['username']) ?></td>
-                                            <td><?= esc($c['email']) ?></td>
+                                            <td><?= esc($c['email'] ?? '') ?></td>
                                             <td><?= date('d M Y', strtotime($c['created_at'])) ?></td>
                                         </tr>
                                     <?php endforeach; ?>
@@ -231,6 +214,79 @@ $voucherValuesJson = htmlspecialchars(json_encode($voucherValues ?? []), ENT_QUO
                 </div>
             </div>
         </div>
+
+        <!-- Recent Subscriptions -->
+        <div class="row g-4">
+            <div class="col-md-6">
+                <div class="card shadow-sm mb-4">
+                    <div class="card-header bg-light"><strong>Recent Subscriptions</strong></div>
+                    <div class="card-body p-0">
+                        <?php if (empty($recentSubscriptions)): ?>
+                            <p class="p-3 text-muted">No subscriptions yet.</p>
+                        <?php else: ?>
+                            <table class="table table-striped mb-0">
+                                <thead>
+                                    <tr>
+                                        <th>#</th>
+                                        <th>Client</th>
+                                        <th>Package</th>
+                                        <th>Status</th>
+                                        <th>Created At</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <?php foreach ($recentSubscriptions as $s): ?>
+                                        <tr>
+                                            <td><?= esc($s['id']) ?></td>
+                                            <td><?= esc($s['client_username']) ?></td>
+                                            <td><?= esc($s['package_name']) ?></td>
+                                            <td><?= ucfirst(esc($s['status'])) ?></td>
+                                            <td><?= date('d M Y, H:i', strtotime($s['created_at'])) ?></td>
+                                        </tr>
+                                    <?php endforeach; ?>
+                                </tbody>
+                            </table>
+                        <?php endif; ?>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Recently Expired / Cancelled Subscriptions -->
+            <div class="col-md-6">
+                <div class="card shadow-sm mb-4">
+                    <div class="card-header bg-light"><strong>Recently Expired / Cancelled</strong></div>
+                    <div class="card-body p-0">
+                        <?php if (empty($recentlyExpired)): ?>
+                            <p class="p-3 text-muted">No recently expired or cancelled subscriptions.</p>
+                        <?php else: ?>
+                            <table class="table table-striped mb-0">
+                                <thead>
+                                    <tr>
+                                        <th>#</th>
+                                        <th>Client</th>
+                                        <th>Package</th>
+                                        <th>Status</th>
+                                        <th>Expires On</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <?php foreach ($recentlyExpired as $s): ?>
+                                        <tr>
+                                            <td><?= esc($s['id']) ?></td>
+                                            <td><?= esc($s['client_username']) ?></td>
+                                            <td><?= esc($s['package_name']) ?></td>
+                                            <td><?= ucfirst(esc($s['status'])) ?></td>
+                                            <td><?= date('d M Y, H:i', strtotime($s['expires_on'])) ?></td>
+                                        </tr>
+                                    <?php endforeach; ?>
+                                </tbody>
+                            </table>
+                        <?php endif; ?>
+                    </div>
+                </div>
+            </div>
+        </div>
+
     </div>
 </div>
 
