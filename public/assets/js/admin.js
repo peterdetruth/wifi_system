@@ -53,7 +53,8 @@ document.addEventListener('DOMContentLoaded', function() {
             data: chartValues,
             fill: true,
             tension: 0.3,
-            borderColor: '#007bff'
+            borderColor: '#007bff',
+            backgroundColor: 'rgba(0,123,255,0.1)'
           }]
         },
         options: { responsive: true, scales: { y: { beginAtZero: true } } }
@@ -84,28 +85,38 @@ document.addEventListener('DOMContentLoaded', function() {
     console.error('Error rendering voucher chart', e);
   }
 
-  // Countdown timers
+  // Countdown timers for Expiring Within 24 Hours
   function updateCountdowns() {
-    document.querySelectorAll('.countdown').forEach(el => {
+    const countdowns = document.querySelectorAll('.countdown');
+    const now = Date.now();
+
+    countdowns.forEach(el => {
       const expiry = new Date(el.dataset.expiry).getTime();
-      const now = Date.now();
+      if (isNaN(expiry)) {
+        el.innerHTML = '<span class="text-muted fw-bold">Invalid Date</span>';
+        return;
+      }
       const diff = expiry - now;
-      if (isNaN(expiry) || diff <= 0) {
+      if (diff <= 0) {
         el.innerHTML = '<span class="text-danger fw-bold">Expired</span>';
         return;
       }
+
       const days = Math.floor(diff / (1000 * 60 * 60 * 24));
       const hours = Math.floor((diff % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
       const mins = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
+      const secs = Math.floor((diff % (1000 * 60)) / 1000);
+
       const parts = [];
       if (days) parts.push(days + 'd');
       if (hours) parts.push(hours + 'h');
-      parts.push(mins + 'm');
-      el.innerHTML = `<span class="text-warning">${parts.join(' ') } left</span>`;
+      if (mins) parts.push(mins + 'm');
+      parts.push(secs + 's');
+
+      el.innerHTML = `<span class="text-warning">${parts.join(' ')} left</span>`;
     });
   }
 
   updateCountdowns();
-  setInterval(updateCountdowns, 60 * 1000);
-
+  setInterval(updateCountdowns, 1000); // update every second for live countdown
 });
