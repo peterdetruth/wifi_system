@@ -4,53 +4,14 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title><?= esc($title ?? 'Admin Dashboard') ?></title>
+
+  <!-- Bootstrap CSS -->
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.8/dist/css/bootstrap.min.css">
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css">
+
+  <!-- Admin styles -->
   <link rel="stylesheet" href="<?= base_url('assets/css/admin.css') ?>">
-  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.8/dist/js/bootstrap.bundle.min.js"></script>
-  <style>
-    body {
-      background-color: #f8f9fa;
-    }
 
-    /* Sidebar styling */
-    #sidebar-wrapper {
-      min-width: 240px;
-      max-width: 240px;
-      transition: all 0.3s ease;
-    }
-    #wrapper.toggled #sidebar-wrapper {
-      margin-left: -240px;
-    }
-
-    .sidebar-heading {
-      font-size: 1.3rem;
-      letter-spacing: 0.5px;
-    }
-
-    .list-group-item {
-      border: none;
-      padding: 12px 20px;
-      transition: background-color 0.2s, color 0.2s;
-    }
-    .list-group-item:hover,
-    .list-group-item.active {
-      background-color: #0d6efd !important;
-      color: white !important;
-    }
-
-    .menu-section {
-      font-size: 0.75rem;
-      text-transform: uppercase;
-      letter-spacing: 1px;
-      opacity: 0.7;
-      padding: 10px 20px 5px;
-    }
-
-    .navbar {
-      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
-    }
-  </style>
 </head>
 
 <body>
@@ -108,7 +69,7 @@
           <i class="bi bi-person-x me-2"></i> Expired
         </a>
         <a href="<?= base_url('admin/features') ?>" class="list-group-item bg-dark text-white">
-          <i class="bi bi-person-x me-2"></i> Features
+          <i class="bi bi-list-check me-2"></i> Features
         </a>
 
         <!-- LOGOUT -->
@@ -134,12 +95,23 @@
     </div>
   </div>
 
+  <!-- Dependencies -->
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.8/dist/js/bootstrap.bundle.min.js"></script>
+  <!-- Chart.js: you may replace with your local copy if you have one -->
+  <script src="<?= base_url('assets/js/chart.js') ?>"></script>
+
+  <!-- Admin script -->
+  <script src="<?= base_url('assets/js/admin.js') ?>"></script>
+
+  <!-- Sidebar toggle -->
   <script>
-    const toggleBtn = document.getElementById("menu-toggle");
-    const wrapper = document.getElementById("wrapper");
-    toggleBtn.addEventListener("click", () => {
-      wrapper.classList.toggle("toggled");
-    });
+    (function() {
+      const toggleBtn = document.getElementById("menu-toggle");
+      const wrapper = document.getElementById("wrapper");
+      if (toggleBtn && wrapper) {
+        toggleBtn.addEventListener("click", () => wrapper.classList.toggle("toggled"));
+      }
+    })();
   </script>
 </body>
 </html>

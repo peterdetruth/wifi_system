@@ -1,3 +1,4 @@
+/* Basic admin.css - combined */
 body {
   font-family: "Segoe UI", sans-serif;
   margin: 0;
@@ -5,152 +6,113 @@ body {
   color: #333;
 }
 
-.sidebar {
-  width: 220px;
+/* Layout wrapper toggling handled by .toggled on #wrapper */
+#wrapper.toggled #sidebar-wrapper {
+  margin-left: -240px;
+}
+
+/* Sidebar (moved from layout) */
+#sidebar-wrapper {
+  min-width: 240px;
+  max-width: 240px;
+  transition: all 0.3s ease;
   background: #222;
   color: #fff;
   height: 100vh;
-  position: fixed;
-  top: 0;
-  left: 0;
-  padding: 20px;
 }
 
-.sidebar .logo {
-  font-size: 20px;
-  font-weight: bold;
-  margin-bottom: 30px;
-  text-align: center;
+/* Sidebar heading */
+.sidebar-heading {
+  font-size: 1.3rem;
+  letter-spacing: 0.5px;
 }
 
-.sidebar ul {
-  list-style: none;
-  padding: 0;
+/* List items */
+.list-group-item {
+  border: none;
+  padding: 12px 20px;
+  transition: background-color 0.2s, color 0.2s;
+}
+.list-group-item:hover,
+.list-group-item.active {
+  background-color: #0d6efd !important;
+  color: white !important;
 }
 
-.sidebar ul li {
-  margin: 15px 0;
+/* Menu section */
+.menu-section {
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  opacity: 0.7;
+  padding: 10px 20px 5px;
 }
 
-.sidebar ul li a {
-  color: #ddd;
-  text-decoration: none;
-  font-weight: 500;
-  display: block;
+/* Navbar shadow */
+.navbar {
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
 }
 
-.sidebar ul li a:hover {
-  color: #1abc9c;
+/* Card KPI styles */
+.kpi-card {
+  border-radius: 6px;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.04);
+  padding: 12px;
 }
+.kpi-card .card-body h6 { margin-bottom: 6px; color: #666; }
+.kpi-card .card-body h2 { font-weight: 700; font-size: 2rem; margin: 0; }
 
-.main-content {
-  margin-left: 240px;
-  padding: 20px;
-}
+/* Secondary KPI small cards */
+.kpi-card-alt { padding: 10px; border-radius: 6px; }
+.kpi-small { font-size: 1.4rem; font-weight: 600; }
 
-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 25px;
-}
-
-.logout-btn {
-  background: #e74c3c;
-  color: white;
-  padding: 6px 12px;
-  border-radius: 4px;
-  text-decoration: none;
-}
-
-.logout-btn:hover {
-  background: #c0392b;
-}
-
-h3 {
-  margin-top: 0;
-}
-
+/* Tables */
 table {
   width: 100%;
   border-collapse: collapse;
-  margin-top: 15px;
+  margin-top: 0;
   background: #fff;
 }
 
-table th, table td {
-  border: 1px solid #ddd;
-  padding: 10px;
-  text-align: left;
+/* Minor layout improvements */
+.card.shadow-sm { box-shadow: 0 1px 6px rgba(0,0,0,0.04); }
+
+/* make sure canvas scales nicely */
+canvas { max-width: 100% !important; height: auto !important; }
+
+/* Responsive tweaks */
+@media (max-width: 768px) {
+  #sidebar-wrapper { display: none; }
+  #page-content-wrapper { margin-left: 0; }
 }
 
-table th {
-  background: #1abc9c;
-  color: white;
-}
+/* Preserve some of your previous admin.css rules (buttons/forms etc.) */
+.sidebar { display: none; } /* keep earlier class but not used */
+.sidebar .logo { font-size: 20px; font-weight: bold; margin-bottom: 30px; text-align: center; }
+.sidebar ul { list-style: none; padding: 0; }
+.sidebar ul li { margin: 15px 0; }
+.sidebar ul li a { color: #ddd; text-decoration: none; font-weight: 500; display: block; }
+.sidebar ul li a:hover { color: #1abc9c; }
+.main-content { margin-left: 240px; padding: 20px; }
 
-.btn {
-  background: #1abc9c;
-  color: white;
-  padding: 5px 10px;
-  border-radius: 4px;
-  text-decoration: none;
-  margin-right: 5px;
-}
+.logout-btn { background: #e74c3c; color: white; padding: 6px 12px; border-radius: 4px; text-decoration: none; }
+.logout-btn:hover { background: #c0392b; }
 
-.btn:hover {
-  background: #16a085;
-}
+h3 { margin-top: 0; }
 
-.btn.danger {
-  background: #e74c3c;
-}
+table th, table td { border: 1px solid #eee; padding: 10px; text-align: left; }
+table th { background: #f1f5f9; color: #333; }
 
-form {
-  background: #fff;
-  padding: 20px;
-  border-radius: 6px;
-  max-width: 500px;
-}
+.btn { background: #1abc9c; color: white; padding: 5px 10px; border-radius: 4px; text-decoration: none; margin-right: 5px; }
+.btn:hover { background: #16a085; }
+.btn.danger { background: #e74c3c; }
 
-form label {
-  display: block;
-  margin-top: 10px;
-}
+form { background: #fff; padding: 20px; border-radius: 6px; max-width: 500px; }
+form label { display: block; margin-top: 10px; }
+form input, form select { width: 100%; padding: 8px; margin-top: 5px; border: 1px solid #ccc; border-radius: 4px; }
+form button { margin-top: 15px; background: #1abc9c; color: white; padding: 8px 15px; border: none; border-radius: 4px; cursor: pointer; }
+form button:hover { background: #16a085; }
 
-form input, form select {
-  width: 100%;
-  padding: 8px;
-  margin-top: 5px;
-  border: 1px solid #ccc;
-  border-radius: 4px;
-}
-
-form button {
-  margin-top: 15px;
-  background: #1abc9c;
-  color: white;
-  padding: 8px 15px;
-  border: none;
-  border-radius: 4px;
-  cursor: pointer;
-}
-
-form button:hover {
-  background: #16a085;
-}
-
-.filter-bar {
-  margin: 10px 0;
-}
-
-.error {
-  color: red;
-  text-align: center;
-  margin-bottom: 10px;
-}
-.success {
-  color: green;
-  text-align: center;
-  margin-bottom: 10px;
-}
+.filter-bar { margin: 10px 0; }
+.error { color: red; text-align: center; margin-bottom: 10px; }
+.success { color: green; text-align: center; margin-bottom: 10px; }
