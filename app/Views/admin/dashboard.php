@@ -2,7 +2,6 @@
 <?= $this->section('content') ?>
 
 <?php
-// Prepare JSON strings for embedding into data attributes (encoded)
 $chartLabelsJson = htmlspecialchars(json_encode($chartLabels ?? []), ENT_QUOTES, 'UTF-8');
 $chartValuesJson = htmlspecialchars(json_encode($chartValues ?? []), ENT_QUOTES, 'UTF-8');
 $voucherLabelsJson = htmlspecialchars(json_encode($voucherLabels ?? []), ENT_QUOTES, 'UTF-8');
@@ -85,7 +84,7 @@ $voucherValuesJson = htmlspecialchars(json_encode($voucherValues ?? []), ENT_QUO
             </div>
         </div>
 
-        <!-- Secondary KPIs: new subs, pending, inactive -->
+        <!-- Secondary KPIs -->
         <div class="row g-3 mb-4">
             <div class="col-md-3">
                 <div class="card kpi-card-alt">
@@ -162,8 +161,8 @@ $voucherValuesJson = htmlspecialchars(json_encode($voucherValues ?? []), ENT_QUO
                             <?php $i = 1; foreach ($expiringSoon as $s): ?>
                                 <tr>
                                     <td><?= $i++ ?></td>
-                                    <td><?= esc($s['client_id']) ?></td>
-                                    <td><?= esc($s['package_id']) ?></td>
+                                    <td><?= esc($s['client_username'] ?? $s['client_id']) ?></td>
+                                    <td><?= esc($s['package_name'] ?? $s['package_id']) ?></td>
                                     <td><?= date('d M Y, H:i', strtotime($s['expires_on'])) ?></td>
                                     <td><span class="countdown" data-expiry="<?= esc($s['expires_on']) ?>"></span></td>
                                 </tr>
@@ -191,7 +190,7 @@ $voucherValuesJson = htmlspecialchars(json_encode($voucherValues ?? []), ENT_QUO
                                     <?php foreach ($recentTransactions as $t): ?>
                                         <tr>
                                             <td>#<?= esc($t['id']) ?></td>
-                                            <td><?= esc($t['client_id']) ?></td>
+                                            <td><?= esc($t['client_username'] ?? $t['client_id']) ?></td>
                                             <td>KES <?= number_format($t['amount'], 2) ?></td>
                                             <td>
                                                 <span class="badge <?= ($t['status'] === 'completed') ? 'bg-success' : (($t['status'] === 'failed') ? 'bg-danger' : 'bg-warning text-dark') ?>">

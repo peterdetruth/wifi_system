@@ -42,47 +42,47 @@ class Dashboard extends BaseController
 
         // Active subscriptions
         $activeSubscriptions = (int) $this->subscriptionModel
-            ->where('status', 'active')
+            ->where('subscriptions.status', 'active')
             ->countAllResults();
 
         // New subscriptions: Today and This Month
         $today = date('Y-m-d');
         $newSubscriptionsToday = (int) $this->subscriptionModel
-            ->where('DATE(created_at)', $today)
+            ->where('DATE(subscriptions.created_at)', $today)
             ->countAllResults();
 
         $newSubscriptionsMonth = (int) $this->subscriptionModel
-            ->where('MONTH(created_at)', $month)
-            ->where('YEAR(created_at)', $year)
+            ->where('MONTH(subscriptions.created_at)', $month)
+            ->where('YEAR(subscriptions.created_at)', $year)
             ->countAllResults();
 
         // Inactive users (expired subscriptions)
         $inactiveUsers = (int) $this->subscriptionModel
-            ->where('status', 'expired')
+            ->where('subscriptions.status', 'expired')
             ->countAllResults();
 
         // Pending payments (not completed)
         $pendingPayments = (int) $this->paymentsModel
-            ->where('status !=', 'completed')
+            ->where('payments.status !=', 'completed')
             ->countAllResults();
 
         // Total Revenue (payments.status = 'completed') for selected month/year
         $totalRevenueRow = $this->paymentsModel
             ->selectSum('amount')
-            ->where('status', 'completed')
-            ->where('MONTH(created_at)', $month)
-            ->where('YEAR(created_at)', $year)
+            ->where('payments.status', 'completed')
+            ->where('MONTH(payments.created_at)', $month)
+            ->where('YEAR(payments.created_at)', $year)
             ->first();
         $totalRevenue = (float) ($totalRevenueRow['amount'] ?? 0.00);
 
         // Revenue chart data (grouped by date)
         $revenueData = $this->paymentsModel
-            ->select("DATE(created_at) as date, SUM(amount) as total")
-            ->where('status', 'completed')
-            ->where('MONTH(created_at)', $month)
-            ->where('YEAR(created_at)', $year)
-            ->groupBy('DATE(created_at)')
-            ->orderBy('DATE(created_at)', 'ASC')
+            ->select("DATE(payments.created_at) as date, SUM(amount) as total")
+            ->where('payments.status', 'completed')
+            ->where('MONTH(payments.created_at)', $month)
+            ->where('YEAR(payments.created_at)', $year)
+            ->groupBy('DATE(payments.created_at)')
+            ->orderBy('DATE(payments.created_at)', 'ASC')
             ->findAll();
 
         $chartLabels = array_column($revenueData, 'date');
@@ -101,9 +101,12 @@ class Dashboard extends BaseController
         $voucherLabels = array_column($voucherUsage, 'date');
         $voucherValues = array_map('intval', array_column($voucherUsage, 'total'));
 
-        // Recent transactions (from payments table, latest completed/pending)
+        // Recent transactions (from payments table, latest completed/pending) with JOIN for client username
         $recentTransactions = $this->paymentsModel
-            ->orderBy('created_at', 'DESC')
+            ->select('payments.*, clients.username AS client_username, packages.name AS package_name')
+            ->join('clients', 'clients.id = payments.client_id', 'left')
+            ->join('packages', 'packages.id = payments.package_id', 'left')
+            ->orderBy('payments.created_at', 'DESC')
             ->limit(8)
             ->findAll();
 
@@ -115,11 +118,15 @@ class Dashboard extends BaseController
 
         // Expiring subscriptions within next 24 hours
         $expiringSoon = $this->subscriptionModel
-            ->where('status', 'active')
-            ->where('expires_on <=', date('Y-m-d H:i:s', strtotime('+24 hours')))
+            ->select('subscriptions.*, clients.username AS client_username, packages.name AS package_name')
+            ->join('clients', 'clients.id = subscriptions.client_id', 'left')
+            ->join('packages', 'packages.id = subscriptions.package_id', 'left')
+            ->where('subscriptions.status', 'active')
+            ->where('subscriptions.expires_on <=', date('Y-m-d H:i:s', strtotime('+24 hours')))
+            ->orderBy('subscriptions.expires_on', 'ASC')
             ->findAll();
 
-        // Pass variables to view (we will embed them as data-* attributes in the view)
+        // Pass variables to view
         return view('admin/dashboard', [
             'totalClients'           => $totalClients,
             'totalPackages'          => $totalPackages,
@@ -153,7 +160,7 @@ class Dashboard extends BaseController
             ->select('payments.*, clients.username AS client_username, packages.name AS package_name')
             ->join('clients', 'clients.id = payments.client_id', 'left')
             ->join('packages', 'packages.id = payments.package_id', 'left')
-            ->where('status', 'completed')
+            ->where('payments.status', 'completed')
             ->where('MONTH(payments.created_at)', $month)
             ->where('YEAR(payments.created_at)', $year)
             ->orderBy('payments.created_at', 'DESC')
