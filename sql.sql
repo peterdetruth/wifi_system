@@ -464,3 +464,11 @@ UPDATE payments
 SET status = 'failed'
 WHERE mpesa_receipt_number = 'TKRQSBBVPA';
 
+CREATE TABLE system_logs (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    log_type VARCHAR(50),
+    message TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+

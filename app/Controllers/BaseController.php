@@ -75,11 +75,56 @@ abstract class BaseController extends Controller
     {
         $db = \Config\Database::connect();
 
-        // Update active subscriptions where expiry time has passed
-        $db->table('subscriptions')
+        /**
+         * 1️⃣ EXPIRE SUBSCRIPTIONS THAT HAVE PASSED THEIR EXPIRY TIME
+         */
+        $expiredSubs = $db->table('subscriptions')
+            ->select('id, client_id, package_id, expires_on')
             ->where('status', 'active')
             ->where('expires_on <', date('Y-m-d H:i:s'))
-            ->set(['status' => 'expired'])
-            ->update();
+            ->get()
+            ->getResultArray();
+
+        if (!empty($expiredSubs)) {
+            foreach ($expiredSubs as $sub) {
+                // Update status → expired
+                $db->table('subscriptions')
+                    ->where('id', $sub['id'])
+                    ->update(['status' => 'expired']);
+
+                /**
+                 * 2️⃣ LOG THE EXPIRED SUBSCRIPTION
+                 */
+                $db->table('system_logs')->insert([
+                    'log_type'  => 'subscription_expired',
+                    'message'   => "Subscription ID {$sub['id']} for client {$sub['client_id']} expired on {$sub['expires_on']}",
+                ]);
+            }
+        }
+
+
+        /**
+         * 3️⃣ UPDATE CLIENT STATUS BASED ON ACTIVE SUBSCRIPTIONS
+         */
+
+        // Mark ACTIVE clients
+        $db->query("
+        UPDATE clients
+        SET status = 'active'
+        WHERE id IN (
+            SELECT DISTINCT client_id FROM subscriptions
+            WHERE status = 'active'
+        )
+    ");
+
+        // Mark INACTIVE clients
+        $db->query("
+        UPDATE clients
+        SET status = 'inactive'
+        WHERE id NOT IN (
+            SELECT DISTINCT client_id FROM subscriptions
+            WHERE status = 'active'
+        )
+    ");
     }
 }
