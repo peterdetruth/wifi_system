@@ -79,7 +79,7 @@ class Clients extends BaseController
 
         // Pagination manually (slice filtered array)
         $totalItems = count($allClients);
-        $clients = array_slice($allClients, ($page-1)*$perPage, $perPage);
+        $clients = array_slice($allClients, ($page - 1) * $perPage, $perPage);
 
         // Use CodeIgniter Pager
         $pager = service('pager');
@@ -179,19 +179,37 @@ class Clients extends BaseController
     {
         $this->ensureLogin();
 
+        $db = \Config\Database::connect();
+
+        // Get client
         $client = $this->clientModel->find($id);
         if (! $client) {
             return redirect()->to('/admin/clients')->with('error', 'Client not found.');
         }
 
-        $subscriptions = $this->subscriptionModel
-            ->where('client_id', $id)
-            ->orderBy('created_at', 'DESC')
-            ->findAll();
+        // Get subscriptions with package name and router name
+        $subscriptions = $db->table('subscriptions s')
+            ->select('s.id, s.payment_id, s.client_id, s.package_id, s.router_id, s.status, s.start_date, s.expires_on, s.created_at, p.name AS package_name, r.name AS router_name')
+            ->join('packages p', 'p.id = s.package_id', 'left')
+            ->join('routers r', 'r.id = s.router_id', 'left')
+            ->where('s.client_id', $id)
+            ->orderBy('s.created_at', 'DESC')
+            ->get()
+            ->getResultArray();
+
+        // Get Mpesa transactions with package name
+        $mpesa_transactions = $db->table('mpesa_transactions m')
+            ->select('m.id, m.client_id, m.package_id, m.transaction_id, m.amount, m.phone_number, m.transaction_date, m.status, m.created_at, m.mpesa_receipt, p.name AS package_name')
+            ->join('packages p', 'p.id = m.package_id', 'left')
+            ->where('m.client_id', $id)
+            ->orderBy('m.created_at', 'DESC')
+            ->get()
+            ->getResultArray();
 
         echo view('admin/clients/view', [
             'client' => $client,
-            'subscriptions' => $subscriptions
+            'subscriptions' => $subscriptions,
+            'mpesa_transactions' => $mpesa_transactions
         ]);
     }
 }
