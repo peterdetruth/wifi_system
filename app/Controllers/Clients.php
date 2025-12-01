@@ -228,22 +228,20 @@ class Clients extends BaseController
         if ($isAjax) {
             $tableType = $this->request->getGet('table'); // 'subscriptions' or 'mpesa'
             if ($tableType === 'subscriptions') {
-                echo view('admin/clients/partials/subscriptions_table', [
+                return view('admin/clients/partials/subscriptions_table', [
                     'subscriptions' => $subscriptions,
                     'subscriptionsTotal' => $totalSubscriptions,
                     'subscriptionsPage' => $subscriptionsPage,
                     'perPage' => $perPage
                 ]);
-                return;
             }
             if ($tableType === 'mpesa') {
-                echo view('admin/clients/partials/mpesa_table', [
+                return view('admin/clients/partials/mpesa_table', [
                     'mpesaTransactions' => $mpesaTransactions,
                     'mpesaTotal' => $totalMpesa,
                     'mpesaPage' => $mpesaPage,
                     'perPage' => $perPage
                 ]);
-                return;
             }
         }
 
@@ -256,7 +254,53 @@ class Clients extends BaseController
             'mpesaTransactions' => $mpesaTransactions,
             'mpesaTotal' => $totalMpesa,
             'mpesaPage' => $mpesaPage,
-            'perPage' => $perPage
+            'perPage' => $perPage,
+            'db' => $db // pass db for packages dropdown in recharge form
         ]);
+    }
+
+
+
+    /**
+     * Recharge a client's account (admin only)
+     */
+    public function recharge($clientId)
+    {
+        $this->ensureLogin();
+
+        $packageId = $this->request->getPost('package_id');
+        if (!$packageId) {
+            return redirect()->back()->with('error', 'Please select a package.');
+        }
+
+        $db = \Config\Database::connect();
+
+        // Check client exists
+        $client = $this->clientModel->find($clientId);
+        if (!$client) {
+            return redirect()->back()->with('error', 'Client not found.');
+        }
+
+        // Get package info (to compute subscription duration)
+        $package = $db->table('packages')->where('id', $packageId)->get()->getRowArray();
+        if (!$package) {
+            return redirect()->back()->with('error', 'Package not found.');
+        }
+
+        // Create subscription immediately (no payment)
+        $subscriptionData = [
+            'client_id'   => $clientId,
+            'package_id'  => $packageId,
+            'router_id'   => null, // optional, can be null
+            'status'      => 'active',
+            'start_date'  => date('Y-m-d H:i:s'),
+            'expires_on'  => date('Y-m-d H:i:s', strtotime('+' . $package['duration_days'] . ' days')), // assuming package has duration_days
+            'created_at'  => date('Y-m-d H:i:s'),
+            'updated_at'  => date('Y-m-d H:i:s')
+        ];
+
+        $db->table('subscriptions')->insert($subscriptionData);
+
+        return redirect()->back()->with('success', 'Client account recharged successfully.');
     }
 }
