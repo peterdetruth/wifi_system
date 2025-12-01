@@ -47,10 +47,15 @@ class Vouchers extends BaseController
         $this->ensureLogin();
 
         $data['routers']  = $this->routerModel->orderBy('name', 'ASC')->findAll();
-        $data['packages'] = $this->packageModel->orderBy('id', 'ASC')->findAll();
+
+        $data['packages'] = $this->packageModel
+            ->where('type', 'hotspot')
+            ->orderBy('id', 'ASC')
+            ->findAll();
 
         return view('admin/vouchers/create', $data);
     }
+
 
     // ======================================
     // STORE: Save new voucher
@@ -119,7 +124,6 @@ class Vouchers extends BaseController
 
             $dbError = $this->voucherModel->errors() ?: Database::connect()->error();
             return redirect()->back()->withInput()->with('error', 'Failed to update voucher: ' . print_r($dbError, true));
-
         } catch (\Exception $e) {
             return redirect()->back()->withInput()->with('error', 'Error: ' . $e->getMessage());
         }
@@ -139,7 +143,6 @@ class Vouchers extends BaseController
 
             $dbError = Database::connect()->error();
             return redirect()->to('/admin/vouchers')->with('error', 'Failed to delete voucher: ' . print_r($dbError, true));
-
         } catch (\Exception $e) {
             return redirect()->to('/admin/vouchers')->with('error', 'Error: ' . $e->getMessage());
         }
