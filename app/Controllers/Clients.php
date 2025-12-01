@@ -173,43 +173,90 @@ class Clients extends BaseController
     }
 
     /**
-     * View client + subscriptions
+     * View client + subscriptions + mpesa transactions
      */
     public function view($id)
     {
         $this->ensureLogin();
 
-        $db = \Config\Database::connect();
-
-        // Get client
         $client = $this->clientModel->find($id);
-        if (! $client) {
+        if (!$client) {
             return redirect()->to('/admin/clients')->with('error', 'Client not found.');
         }
 
-        // Get subscriptions with package name and router name
-        $subscriptions = $db->table('subscriptions s')
-            ->select('s.id, s.payment_id, s.client_id, s.package_id, s.router_id, s.status, s.start_date, s.expires_on, s.created_at, p.name AS package_name, r.name AS router_name')
+        $db = \Config\Database::connect();
+        $perPage = 5;
+
+        $isAjax = $this->request->isAJAX();
+
+        // --- Subscriptions ---
+        $subscriptionsPage = max(1, (int) $this->request->getGet('subscriptions_page'));
+        $subscriptionsStatus = $this->request->getGet('subscriptions_status');
+
+        $subsBuilder = $db->table('subscriptions s')
+            ->select('s.id, s.payment_id, s.status, s.start_date, s.expires_on, p.name AS package_name, r.name AS router_name')
             ->join('packages p', 'p.id = s.package_id', 'left')
             ->join('routers r', 'r.id = s.router_id', 'left')
             ->where('s.client_id', $id)
-            ->orderBy('s.created_at', 'DESC')
-            ->get()
-            ->getResultArray();
+            ->orderBy('s.created_at', 'DESC');
 
-        // Get Mpesa transactions with package name
-        $mpesa_transactions = $db->table('mpesa_transactions m')
-            ->select('m.id, m.client_id, m.package_id, m.transaction_id, m.amount, m.phone_number, m.transaction_date, m.status, m.created_at, m.mpesa_receipt, p.name AS package_name')
+        if ($subscriptionsStatus && in_array($subscriptionsStatus, ['active', 'expired', 'cancelled'])) {
+            $subsBuilder->where('s.status', $subscriptionsStatus);
+        }
+
+        $totalSubscriptions = $subsBuilder->countAllResults(false);
+        $subscriptions = $subsBuilder->get($perPage, max(0, ($subscriptionsPage - 1) * $perPage))->getResultArray();
+
+        // --- Mpesa Transactions ---
+        $mpesaPage = max(1, (int) $this->request->getGet('mpesa_page'));
+        $mpesaStatus = $this->request->getGet('mpesa_status');
+
+        $mpesaBuilder = $db->table('mpesa_transactions m')
+            ->select('m.id, m.transaction_id, m.amount, m.phone_number, m.transaction_date, m.status, m.created_at, m.mpesa_receipt, p.name AS package_name')
             ->join('packages p', 'p.id = m.package_id', 'left')
             ->where('m.client_id', $id)
-            ->orderBy('m.created_at', 'DESC')
-            ->get()
-            ->getResultArray();
+            ->orderBy('m.created_at', 'DESC');
 
+        if ($mpesaStatus && in_array($mpesaStatus, ['pending', 'success', 'failed'])) {
+            $mpesaBuilder->where('m.status', $mpesaStatus);
+        }
+
+        $totalMpesa = $mpesaBuilder->countAllResults(false);
+        $mpesaTransactions = $mpesaBuilder->get($perPage, max(0, ($mpesaPage - 1) * $perPage))->getResultArray();
+
+        // --- AJAX Partial Render ---
+        if ($isAjax) {
+            $tableType = $this->request->getGet('table'); // 'subscriptions' or 'mpesa'
+            if ($tableType === 'subscriptions') {
+                echo view('admin/clients/partials/subscriptions_table', [
+                    'subscriptions' => $subscriptions,
+                    'subscriptionsTotal' => $totalSubscriptions,
+                    'subscriptionsPage' => $subscriptionsPage,
+                    'perPage' => $perPage
+                ]);
+                return;
+            }
+            if ($tableType === 'mpesa') {
+                echo view('admin/clients/partials/mpesa_table', [
+                    'mpesaTransactions' => $mpesaTransactions,
+                    'mpesaTotal' => $totalMpesa,
+                    'mpesaPage' => $mpesaPage,
+                    'perPage' => $perPage
+                ]);
+                return;
+            }
+        }
+
+        // --- Full Page Render ---
         echo view('admin/clients/view', [
             'client' => $client,
             'subscriptions' => $subscriptions,
-            'mpesa_transactions' => $mpesa_transactions
+            'subscriptionsTotal' => $totalSubscriptions,
+            'subscriptionsPage' => $subscriptionsPage,
+            'mpesaTransactions' => $mpesaTransactions,
+            'mpesaTotal' => $totalMpesa,
+            'mpesaPage' => $mpesaPage,
+            'perPage' => $perPage
         ]);
     }
 }
