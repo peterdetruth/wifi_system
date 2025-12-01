@@ -17,6 +17,9 @@ class Clients extends BaseController
         $this->subscriptionModel = new SubscriptionModel();
     }
 
+    /**
+     * Ensure user is logged in
+     */
     protected function ensureLogin()
     {
         if (! session()->get('isLoggedIn')) {
@@ -24,24 +27,38 @@ class Clients extends BaseController
         }
     }
 
+    /**
+     * List all clients
+     */
     public function index()
     {
         $this->ensureLogin();
 
-        $subscriptionModel = new \App\Models\SubscriptionModel();
+        $subscriptionModel = new SubscriptionModel();
 
-        // Optional filter for status ?status=active/inactive
+        // Optional filter for status: ?status=active/inactive
         $statusFilter = $this->request->getGet('status');
+
+        // Fetch all clients
         $clients = $this->clientModel->orderBy('id', 'DESC')->findAll();
 
         foreach ($clients as &$client) {
+
+            // Count active subscriptions
             $activeSubs = $subscriptionModel
                 ->where('client_id', $client['id'])
                 ->where('status', 'active')
                 ->countAllResults();
 
+            // Count ALL subscriptions (active + expired + cancelled)
+            $totalSubs = $subscriptionModel
+                ->where('client_id', $client['id'])
+                ->countAllResults();
+
+            // Assign status + counts
             $client['status'] = $activeSubs > 0 ? 'active' : 'inactive';
             $client['active_subscriptions_count'] = $activeSubs;
+            $client['subscriptions_count'] = $totalSubs;
         }
 
         // Apply status filter if provided
@@ -49,21 +66,24 @@ class Clients extends BaseController
             $clients = array_filter($clients, fn($c) => $c['status'] === $statusFilter);
         }
 
-        // Pass clients **and statusFilter** to the view
         echo view('admin/clients/index', [
             'clients' => $clients,
-            'status' => $statusFilter // <--- this fixes the undefined variable error
+            'status'   => $statusFilter
         ]);
     }
 
-
-
+    /**
+     * Create form
+     */
     public function create()
     {
         $this->ensureLogin();
         echo view('admin/clients/create');
     }
 
+    /**
+     * Store new client
+     */
     public function store()
     {
         try {
@@ -75,20 +95,30 @@ class Clients extends BaseController
 
             $dbError = $this->clientModel->errors() ?: Database::connect()->error();
             return redirect()->back()->withInput()->with('error', 'Failed to create client: ' . print_r($dbError, true));
+
         } catch (\Exception $e) {
             return redirect()->back()->withInput()->with('error', 'Error: ' . $e->getMessage());
         }
     }
 
+    /**
+     * Edit client
+     */
     public function edit($id)
     {
         $this->ensureLogin();
         $client = $this->clientModel->find($id);
-        if (! $client) return redirect()->to('/admin/clients')->with('error', 'Client not found.');
+
+        if (! $client) {
+            return redirect()->to('/admin/clients')->with('error', 'Client not found.');
+        }
 
         echo view('admin/clients/edit', ['client' => $client]);
     }
 
+    /**
+     * Update client
+     */
     public function update($id)
     {
         try {
@@ -100,11 +130,15 @@ class Clients extends BaseController
 
             $dbError = $this->clientModel->errors() ?: Database::connect()->error();
             return redirect()->back()->withInput()->with('error', 'Failed to update client: ' . print_r($dbError, true));
+
         } catch (\Exception $e) {
             return redirect()->back()->withInput()->with('error', 'Error: ' . $e->getMessage());
         }
     }
 
+    /**
+     * Delete client
+     */
     public function delete($id)
     {
         try {
@@ -114,22 +148,31 @@ class Clients extends BaseController
 
             $dbError = Database::connect()->error();
             return redirect()->to('/admin/clients')->with('error', 'Failed to delete client: ' . print_r($dbError, true));
+
         } catch (\Exception $e) {
             return redirect()->to('/admin/clients')->with('error', 'Error: ' . $e->getMessage());
         }
     }
 
-    // Optional: View client details
+    /**
+     * View individual client + subscriptions
+     */
     public function view($id)
     {
         $this->ensureLogin();
-        $client = $this->clientModel->find($id);
-        if (! $client) return redirect()->to('/admin/clients')->with('error', 'Client not found.');
 
-        $subscriptions = $this->subscriptionModel->where('client_id', $id)->orderBy('created_at', 'DESC')->findAll();
+        $client = $this->clientModel->find($id);
+        if (! $client) {
+            return redirect()->to('/admin/clients')->with('error', 'Client not found.');
+        }
+
+        $subscriptions = $this->subscriptionModel
+            ->where('client_id', $id)
+            ->orderBy('created_at', 'DESC')
+            ->findAll();
 
         echo view('admin/clients/view', [
-            'client' => $client,
+            'client'        => $client,
             'subscriptions' => $subscriptions
         ]);
     }
