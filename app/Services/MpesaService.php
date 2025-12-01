@@ -288,6 +288,12 @@ class MpesaService
         return date('Y-m-d H:i:s', strtotime('+1 day', strtotime($startDate)));
     }
 
+    public function getExpiry(array $package, ?string $startDate = null): string
+    {
+        return $this->calculateSubscriptionExpiry($package, $startDate);
+    }
+
+
     private function processSuccessfulCallback(array $transaction, array $callback, string $resultDesc, string $checkoutRequestId): array
     {
         $metadata = $callback['CallbackMetadata']['Item'] ?? [];

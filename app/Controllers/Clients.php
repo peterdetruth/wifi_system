@@ -281,20 +281,24 @@ class Clients extends BaseController
             return redirect()->back()->with('error', 'Client not found.');
         }
 
-        // Get package info (to compute subscription duration)
+        // Get package info
         $package = $db->table('packages')->where('id', $packageId)->get()->getRowArray();
         if (!$package) {
             return redirect()->back()->with('error', 'Package not found.');
         }
 
+        // Use MpesaService to calculate expiry
+        $mpesaService = service('mpesaService');
+        $expiryDate = $mpesaService->getExpiry($package);
+
         // Create subscription immediately (no payment)
         $subscriptionData = [
             'client_id'   => $clientId,
             'package_id'  => $packageId,
-            'router_id'   => null, // optional, can be null
+            'router_id'   => null,
             'status'      => 'active',
             'start_date'  => date('Y-m-d H:i:s'),
-            'expires_on'  => date('Y-m-d H:i:s', strtotime('+' . $package['duration_days'] . ' days')), // assuming package has duration_days
+            'expires_on'  => $expiryDate,
             'created_at'  => date('Y-m-d H:i:s'),
             'updated_at'  => date('Y-m-d H:i:s')
         ];

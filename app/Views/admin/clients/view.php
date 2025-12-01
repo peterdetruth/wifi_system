@@ -3,6 +3,8 @@
 
 <h3>Client: <?= esc($client['full_name']) ?> (<?= esc($client['username']) ?>)</h3>
 
+<?= view('templates/alerts') ?>
+
 <!-- Subscriptions Table -->
 <div class="mb-4">
     <h5>Subscriptions</h5>
@@ -47,78 +49,113 @@
     </div>
 </div>
 
+<!-- Account Recharge Form -->
+<div class="mb-4">
+    <h5>Account Recharge</h5>
+    <form method="POST" action="<?= base_url('/admin/clients/recharge/' . $client['id']) ?>" class="d-flex gap-2 align-items-center">
+        <?= csrf_field() ?>
+
+        <label for="package">Select Package:</label>
+        <select name="package_id" id="package" class="form-select w-auto" required>
+            <option value="">-- Choose Package --</option>
+            <?php foreach ($db->table('packages')->get()->getResultArray() as $pkg): ?>
+                <option value="<?= esc($pkg['id']) ?>"><?= esc($pkg['name']) ?></option>
+            <?php endforeach; ?>
+        </select>
+
+        <button type="submit" class="btn btn-success">Auto Connect</button>
+    </form>
+</div>
+
+
 <!-- CSS & Countdown -->
 <style>
-    .countdown { font-weight: bold; color: #d9534f; }
-    .pagination { display: flex; gap: 0.3rem; }
-    .pagination li { cursor: pointer; }
-    .pagination li.active a { background-color: #0d6efd; color: white; }
+    .countdown {
+        font-weight: bold;
+        color: #d9534f;
+    }
+
+    .pagination {
+        display: flex;
+        gap: 0.3rem;
+    }
+
+    .pagination li {
+        cursor: pointer;
+    }
+
+    .pagination li.active a {
+        background-color: #0d6efd;
+        color: white;
+    }
 </style>
 
 <!-- JS -->
 <script>
-document.addEventListener('DOMContentLoaded', function() {
+    document.addEventListener('DOMContentLoaded', function() {
 
-    function updateCountdowns() {
-        document.querySelectorAll('.countdown').forEach(function(el) {
-            let expiry = new Date(el.dataset.expiry);
-            let now = new Date();
-            let diff = expiry - now;
-            if (diff <= 0) {
-                el.textContent = 'Expired';
-            } else {
-                let days = Math.floor(diff / (1000*60*60*24));
-                let hours = Math.floor((diff / (1000*60*60)) % 24);
-                let mins = Math.floor((diff / (1000*60)) % 60);
-                let secs = Math.floor((diff / 1000) % 60);
-                el.textContent = days+'d '+hours+'h '+mins+'m '+secs+'s';
+        function updateCountdowns() {
+            document.querySelectorAll('.countdown').forEach(function(el) {
+                let expiry = new Date(el.dataset.expiry);
+                let now = new Date();
+                let diff = expiry - now;
+                if (diff <= 0) {
+                    el.textContent = 'Expired';
+                } else {
+                    let days = Math.floor(diff / (1000 * 60 * 60 * 24));
+                    let hours = Math.floor((diff / (1000 * 60 * 60)) % 24);
+                    let mins = Math.floor((diff / (1000 * 60)) % 60);
+                    let secs = Math.floor((diff / 1000) % 60);
+                    el.textContent = days + 'd ' + hours + 'h ' + mins + 'm ' + secs + 's';
+                }
+            });
+        }
+        setInterval(updateCountdowns, 1000);
+        updateCountdowns();
+
+        // AJAX table reload
+        function loadTable(tableType, page, status) {
+            const url = '<?= base_url("/admin/clients/view/" . $client["id"]) ?>';
+            fetch(`${url}?table=${tableType}&${tableType}_page=${page}&${tableType}_status=${status}`, {
+                    headers: {
+                        'X-Requested-With': 'XMLHttpRequest'
+                    }
+                })
+                .then(res => res.text())
+                .then(html => {
+                    if (tableType === 'subscriptions') {
+                        document.getElementById('subscriptionsTable').innerHTML = html;
+                    } else {
+                        document.getElementById('mpesaTable').innerHTML = html;
+                    }
+                });
+        }
+
+        // Pagination click
+        document.addEventListener('click', function(e) {
+            if (e.target.closest('#subscriptionsPagination a')) {
+                e.preventDefault();
+                const page = e.target.dataset.page;
+                const status = document.getElementById('subscriptionsStatus').value;
+                loadTable('subscriptions', page, status);
+            }
+            if (e.target.closest('#mpesaPagination a')) {
+                e.preventDefault();
+                const page = e.target.dataset.page;
+                const status = document.getElementById('mpesaStatus').value;
+                loadTable('mpesa', page, status);
             }
         });
-    }
-    setInterval(updateCountdowns, 1000);
-    updateCountdowns();
 
-    // AJAX table reload
-    function loadTable(tableType, page, status) {
-        const url = '<?= base_url("/admin/clients/view/" . $client["id"]) ?>';
-        fetch(`${url}?table=${tableType}&${tableType}_page=${page}&${tableType}_status=${status}`, {
-            headers: { 'X-Requested-With': 'XMLHttpRequest' }
-        })
-        .then(res => res.text())
-        .then(html => {
-            if (tableType === 'subscriptions') {
-                document.getElementById('subscriptionsTable').innerHTML = html;
-            } else {
-                document.getElementById('mpesaTable').innerHTML = html;
-            }
+        // Status filter change
+        document.getElementById('subscriptionsStatus').addEventListener('change', function() {
+            loadTable('subscriptions', 1, this.value);
         });
-    }
+        document.getElementById('mpesaStatus').addEventListener('change', function() {
+            loadTable('mpesa', 1, this.value);
+        });
 
-    // Pagination click
-    document.addEventListener('click', function(e) {
-        if (e.target.closest('#subscriptionsPagination a')) {
-            e.preventDefault();
-            const page = e.target.dataset.page;
-            const status = document.getElementById('subscriptionsStatus').value;
-            loadTable('subscriptions', page, status);
-        }
-        if (e.target.closest('#mpesaPagination a')) {
-            e.preventDefault();
-            const page = e.target.dataset.page;
-            const status = document.getElementById('mpesaStatus').value;
-            loadTable('mpesa', page, status);
-        }
     });
-
-    // Status filter change
-    document.getElementById('subscriptionsStatus').addEventListener('change', function() {
-        loadTable('subscriptions', 1, this.value);
-    });
-    document.getElementById('mpesaStatus').addEventListener('change', function() {
-        loadTable('mpesa', 1, this.value);
-    });
-
-});
 </script>
 
 <?= $this->endSection() ?>
