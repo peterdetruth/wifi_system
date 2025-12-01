@@ -1,21 +1,26 @@
 <?php
+
 namespace App\Controllers;
 
 use App\Models\ClientModel;
+use App\Models\SubscriptionModel;
 use Config\Database;
 
 class Clients extends BaseController
 {
     protected $clientModel;
+    protected $subscriptionModel;
+
     public function __construct()
     {
-        // helper(['form','url']);
         $this->clientModel = new ClientModel();
+        $this->subscriptionModel = new SubscriptionModel();
     }
 
-    protected function ensureLogin() {
+    protected function ensureLogin()
+    {
         if (! session()->get('isLoggedIn')) {
-            return redirect()->to('/login')->with('error','Please login')->send();
+            return redirect()->to('/login')->with('error', 'Please login')->send();
         }
     }
 
@@ -23,16 +28,35 @@ class Clients extends BaseController
     {
         $this->ensureLogin();
 
-        // optional filter for status ?status=active
-        $status = $this->request->getGet('status');
-        if ($status && in_array($status, ['active','inactive'])) {
-            $data['clients'] = $this->clientModel->where('status', $status)->orderBy('id','DESC')->findAll();
-        } else {
-            $data['clients'] = $this->clientModel->orderBy('id','DESC')->findAll();
+        $subscriptionModel = new \App\Models\SubscriptionModel();
+
+        // Optional filter for status ?status=active/inactive
+        $statusFilter = $this->request->getGet('status');
+        $clients = $this->clientModel->orderBy('id', 'DESC')->findAll();
+
+        foreach ($clients as &$client) {
+            $activeSubs = $subscriptionModel
+                ->where('client_id', $client['id'])
+                ->where('status', 'active')
+                ->countAllResults();
+
+            $client['status'] = $activeSubs > 0 ? 'active' : 'inactive';
+            $client['active_subscriptions_count'] = $activeSubs;
         }
 
-        echo view('admin/clients/index', $data);
+        // Apply status filter if provided
+        if ($statusFilter && in_array($statusFilter, ['active', 'inactive'])) {
+            $clients = array_filter($clients, fn($c) => $c['status'] === $statusFilter);
+        }
+
+        // Pass clients **and statusFilter** to the view
+        echo view('admin/clients/index', [
+            'clients' => $clients,
+            'status' => $statusFilter // <--- this fixes the undefined variable error
+        ]);
     }
+
+
 
     public function create()
     {
@@ -60,7 +84,7 @@ class Clients extends BaseController
     {
         $this->ensureLogin();
         $client = $this->clientModel->find($id);
-        if (! $client) return redirect()->to('/admin/clients')->with('error','Client not found.');
+        if (! $client) return redirect()->to('/admin/clients')->with('error', 'Client not found.');
 
         echo view('admin/clients/edit', ['client' => $client]);
     }
@@ -95,15 +119,18 @@ class Clients extends BaseController
         }
     }
 
-    // optional toggle active/inactive
-    public function toggleStatus($id)
+    // Optional: View client details
+    public function view($id)
     {
         $this->ensureLogin();
         $client = $this->clientModel->find($id);
-        if (! $client) return redirect()->back()->with('error','Client not found.');
+        if (! $client) return redirect()->to('/admin/clients')->with('error', 'Client not found.');
 
-        $new = $client['status'] === 'active' ? 'inactive' : 'active';
-        $this->clientModel->update($id, ['status' => $new]);
-        return redirect()->back()->with('success','Client status updated.');
+        $subscriptions = $this->subscriptionModel->where('client_id', $id)->orderBy('created_at', 'DESC')->findAll();
+
+        echo view('admin/clients/view', [
+            'client' => $client,
+            'subscriptions' => $subscriptions
+        ]);
     }
 }
