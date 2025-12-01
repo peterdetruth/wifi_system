@@ -36,12 +36,21 @@ class Clients extends BaseController
 
         $subscriptionModel = new SubscriptionModel();
 
-        // Optional filter for status: ?status=active/inactive
+        // Optional status filter
         $statusFilter = $this->request->getGet('status');
 
-        // Fetch all clients
-        $clients = $this->clientModel->orderBy('id', 'DESC')->findAll();
+        // Pagination
+        $perPage = 20; // Change this anytime
+        $page = $this->request->getVar('page') ?? 1;
 
+        // Base client query
+        $builder = $this->clientModel->orderBy('id', 'DESC');
+
+        // First, get paginated clients (no filters yet)
+        $clients = $builder->paginate($perPage);
+        $pager = $this->clientModel->pager;
+
+        // Loop through paginated clients
         foreach ($clients as &$client) {
 
             // Count active subscriptions
@@ -55,20 +64,20 @@ class Clients extends BaseController
                 ->where('client_id', $client['id'])
                 ->countAllResults();
 
-            // Assign status + counts
             $client['status'] = $activeSubs > 0 ? 'active' : 'inactive';
             $client['active_subscriptions_count'] = $activeSubs;
             $client['subscriptions_count'] = $totalSubs;
         }
 
-        // Apply status filter if provided
+        // Apply status filter **after** pagination
         if ($statusFilter && in_array($statusFilter, ['active', 'inactive'])) {
             $clients = array_filter($clients, fn($c) => $c['status'] === $statusFilter);
         }
 
         echo view('admin/clients/index', [
             'clients' => $clients,
-            'status'   => $statusFilter
+            'pager'   => $pager,
+            'status'  => $statusFilter
         ]);
     }
 
@@ -95,7 +104,6 @@ class Clients extends BaseController
 
             $dbError = $this->clientModel->errors() ?: Database::connect()->error();
             return redirect()->back()->withInput()->with('error', 'Failed to create client: ' . print_r($dbError, true));
-
         } catch (\Exception $e) {
             return redirect()->back()->withInput()->with('error', 'Error: ' . $e->getMessage());
         }
@@ -130,7 +138,6 @@ class Clients extends BaseController
 
             $dbError = $this->clientModel->errors() ?: Database::connect()->error();
             return redirect()->back()->withInput()->with('error', 'Failed to update client: ' . print_r($dbError, true));
-
         } catch (\Exception $e) {
             return redirect()->back()->withInput()->with('error', 'Error: ' . $e->getMessage());
         }
@@ -148,7 +155,6 @@ class Clients extends BaseController
 
             $dbError = Database::connect()->error();
             return redirect()->to('/admin/clients')->with('error', 'Failed to delete client: ' . print_r($dbError, true));
-
         } catch (\Exception $e) {
             return redirect()->to('/admin/clients')->with('error', 'Error: ' . $e->getMessage());
         }

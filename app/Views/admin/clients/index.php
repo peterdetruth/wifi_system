@@ -56,4 +56,8 @@
   </tbody>
 </table>
 
+<div class="mt-3">
+    <?= $pager->links() ?>
+</div>
+
 <?= $this->endSection() ?>
