@@ -17,6 +17,9 @@ class Clients extends BaseController
         $this->subscriptionModel = new SubscriptionModel();
     }
 
+    /**
+     * Ensure user is logged in
+     */
     protected function ensureLogin()
     {
         if (! session()->get('isLoggedIn')) {
@@ -25,134 +28,167 @@ class Clients extends BaseController
     }
 
     /**
-     * List clients with filters + pagination
+     * List all clients with filters, search, and pagination
      */
     public function index()
     {
         $this->ensureLogin();
 
-        $subscriptionModel = new SubscriptionModel();
+        $subscriptionModel = $this->subscriptionModel;
 
-        // Filters
-        $statusFilter = $this->request->getGet('status'); // active / expired / cancelled
-        $search = $this->request->getGet('search');
+        $statusFilter = $this->request->getGet('status');
+        $searchFilter = $this->request->getGet('search');
 
-        // Pagination
-        $perPage = 20;
+        $perPage = 3; // Items per page
         $page = $this->request->getVar('page') ?? 1;
 
-        // Base query
+        // Build query with optional search filter
         $builder = $this->clientModel->orderBy('id', 'DESC');
 
-        // Apply search
-        if ($search) {
+        if ($searchFilter) {
             $builder->groupStart()
-                ->like('full_name', $search)
-                ->orLike('username', $search)
-                ->orLike('email', $search)
-                ->orLike('phone', $search)
+                ->like('full_name', $searchFilter)
+                ->orLike('username', $searchFilter)
+                ->orLike('email', $searchFilter)
                 ->groupEnd();
         }
 
-        // Fetch paginated clients first
-        $clients = $builder->paginate($perPage);
-        $pager = $this->clientModel->pager;
+        // Get all filtered clients first
+        $allClients = $builder->findAll();
 
-        // Now compute subscription counts and status
-        foreach ($clients as &$client) {
-            // Count all subscriptions
-            $totalSubs = $subscriptionModel
-                ->where('client_id', $client['id'])
-                ->countAllResults();
-
-            // Count active subscriptions
+        // Compute status & subscriptions count for each client
+        foreach ($allClients as &$client) {
             $activeSubs = $subscriptionModel
                 ->where('client_id', $client['id'])
                 ->where('status', 'active')
                 ->countAllResults();
 
-            // Determine client status (based on active subscriptions)
-            $computedStatus = $activeSubs > 0 ? 'active' : ($totalSubs > 0 ? 'inactive' : 'none');
+            $totalSubs = $subscriptionModel
+                ->where('client_id', $client['id'])
+                ->countAllResults();
 
-            $client['subscriptions_count'] = $totalSubs;
+            $client['status'] = $activeSubs > 0 ? 'active' : 'inactive';
             $client['active_subscriptions_count'] = $activeSubs;
-            $client['status'] = $computedStatus;
+            $client['subscriptions_count'] = $totalSubs;
         }
 
-        // Apply status filter after subscription counts
-        if ($statusFilter && in_array($statusFilter, ['active','expired','cancelled'])) {
-            $clients = array_filter($clients, fn($c) => $c['status'] === $statusFilter);
+        // Apply status filter (after computing active/inactive)
+        if ($statusFilter && in_array($statusFilter, ['active', 'inactive'])) {
+            $allClients = array_filter($allClients, fn($c) => $c['status'] === $statusFilter);
         }
+
+        // Pagination manually (slice filtered array)
+        $totalItems = count($allClients);
+        $clients = array_slice($allClients, ($page-1)*$perPage, $perPage);
+
+        // Use CodeIgniter Pager
+        $pager = service('pager');
+        $pager->makeLinks($page, $perPage, $totalItems, 'default_full');
 
         echo view('admin/clients/index', [
             'clients' => $clients,
-            'pager'   => $pager,
-            'status'  => $statusFilter,
-            'search'  => $search
+            'pager' => $pager,
+            'status' => $statusFilter,
+            'search' => $searchFilter
         ]);
     }
 
+    /**
+     * Create client form
+     */
     public function create()
     {
         $this->ensureLogin();
         echo view('admin/clients/create');
     }
 
+    /**
+     * Store new client
+     */
     public function store()
     {
         try {
             $data = $this->request->getPost();
+
             if ($this->clientModel->save($data)) {
                 return redirect()->to('/admin/clients')->with('success', 'Client created successfully.');
             }
+
             $dbError = $this->clientModel->errors() ?: Database::connect()->error();
-            return redirect()->back()->withInput()->with('error', 'Failed to create client: ' . print_r($dbError,true));
+            return redirect()->back()->withInput()->with('error', 'Failed to create client: ' . print_r($dbError, true));
         } catch (\Exception $e) {
             return redirect()->back()->withInput()->with('error', 'Error: ' . $e->getMessage());
         }
     }
 
+    /**
+     * Edit client
+     */
     public function edit($id)
     {
         $this->ensureLogin();
         $client = $this->clientModel->find($id);
-        if (! $client) return redirect()->to('/admin/clients')->with('error', 'Client not found.');
+
+        if (! $client) {
+            return redirect()->to('/admin/clients')->with('error', 'Client not found.');
+        }
+
         echo view('admin/clients/edit', ['client' => $client]);
     }
 
+    /**
+     * Update client
+     */
     public function update($id)
     {
         try {
             $data = $this->request->getPost();
+
             if ($this->clientModel->update($id, $data)) {
                 return redirect()->to('/admin/clients')->with('success', 'Client updated successfully.');
             }
+
             $dbError = $this->clientModel->errors() ?: Database::connect()->error();
-            return redirect()->back()->withInput()->with('error', 'Failed to update client: ' . print_r($dbError,true));
+            return redirect()->back()->withInput()->with('error', 'Failed to update client: ' . print_r($dbError, true));
         } catch (\Exception $e) {
             return redirect()->back()->withInput()->with('error', 'Error: ' . $e->getMessage());
         }
     }
 
+    /**
+     * Delete client
+     */
     public function delete($id)
     {
         try {
             if ($this->clientModel->delete($id)) {
                 return redirect()->to('/admin/clients')->with('success', 'Client deleted successfully.');
             }
+
             $dbError = Database::connect()->error();
-            return redirect()->to('/admin/clients')->with('error', 'Failed to delete client: ' . print_r($dbError,true));
+            return redirect()->to('/admin/clients')->with('error', 'Failed to delete client: ' . print_r($dbError, true));
         } catch (\Exception $e) {
             return redirect()->to('/admin/clients')->with('error', 'Error: ' . $e->getMessage());
         }
     }
 
+    /**
+     * View client + subscriptions
+     */
     public function view($id)
     {
         $this->ensureLogin();
+
         $client = $this->clientModel->find($id);
-        if (! $client) return redirect()->to('/admin/clients')->with('error', 'Client not found.');
-        $subscriptions = $this->subscriptionModel->where('client_id', $id)->orderBy('created_at', 'DESC')->findAll();
+        if (! $client) {
+            return redirect()->to('/admin/clients')->with('error', 'Client not found.');
+        }
+
+        $subscriptions = $this->subscriptionModel
+            ->where('client_id', $id)
+            ->orderBy('created_at', 'DESC')
+            ->findAll();
+
         echo view('admin/clients/view', [
             'client' => $client,
             'subscriptions' => $subscriptions
