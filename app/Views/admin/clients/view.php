@@ -15,53 +15,12 @@
         </select>
     </div>
     <div id="subscriptionsTable">
-        <table class="table table-striped">
-            <thead>
-                <tr>
-                    <th>ID</th>
-                    <th>Payment ID</th>
-                    <th>Package</th>
-                    <th>Router</th>
-                    <th>Status</th>
-                    <th>Start Date</th>
-                    <th>Expiry Date</th>
-                    <th>Time Remaining</th>
-                </tr>
-            </thead>
-            <tbody>
-                <?php foreach ($subscriptions as $sub): ?>
-                    <tr>
-                        <td><?= esc($sub['id']) ?></td>
-                        <td><?= esc($sub['payment_id']) ?></td>
-                        <td><?= esc($sub['package_name']) ?></td>
-                        <td><?= esc($sub['router_name'] ?? '-') ?></td>
-                        <td><?= esc(ucfirst($sub['status'])) ?></td>
-                        <td><?= esc($sub['start_date']) ?></td>
-                        <td><?= esc($sub['expires_on']) ?></td>
-                        <td>
-                            <?php if ($sub['status'] != 'expired'): ?>
-                                <span class="countdown" data-expiry="<?= esc($sub['expires_on']) ?>"></span>
-                            <?php else: ?>
-                                -
-                            <?php endif; ?>
-                        </td>
-                    </tr>
-                <?php endforeach; ?>
-            </tbody>
-        </table>
-
-        <!-- Pagination -->
-        <nav>
-            <ul class="pagination" id="subscriptionsPagination">
-                <?php
-                $totalPages = ceil($subscriptionsTotal / $perPage);
-                for ($i = 1; $i <= $totalPages; $i++): ?>
-                    <li class="page-item <?= $i == $subscriptionsPage ? 'active' : '' ?>">
-                        <a href="#" class="page-link" data-page="<?= $i ?>"><?= $i ?></a>
-                    </li>
-                <?php endfor; ?>
-            </ul>
-        </nav>
+        <?= view('admin/clients/partials/subscriptions_table', [
+            'subscriptions' => $subscriptions,
+            'subscriptionsTotal' => $subscriptionsTotal,
+            'subscriptionsPage' => $subscriptionsPage,
+            'perPage' => $perPage
+        ]) ?>
     </div>
 </div>
 
@@ -77,53 +36,15 @@
         </select>
     </div>
     <div id="mpesaTable">
-        <table class="table table-striped">
-            <thead>
-                <tr>
-                    <th>ID</th>
-                    <th>Transaction ID</th>
-                    <th>Package</th>
-                    <th>Amount</th>
-                    <th>Phone</th>
-                    <th>Transaction Date</th>
-                    <th>Status</th>
-                    <th>Created</th>
-                    <th>Mpesa Receipt</th>
-                </tr>
-            </thead>
-            <tbody>
-                <?php foreach ($mpesaTransactions as $mpesa): ?>
-                    <tr>
-                        <td><?= esc($mpesa['id']) ?></td>
-                        <td><?= esc($mpesa['transaction_id']) ?></td>
-                        <td><?= esc($mpesa['package_name']) ?></td>
-                        <td><?= esc($mpesa['amount']) ?></td>
-                        <td><?= esc($mpesa['phone_number']) ?></td>
-                        <td><?= esc($mpesa['transaction_date']) ?></td>
-                        <td><?= esc(ucfirst($mpesa['status'])) ?></td>
-                        <td><?= esc($mpesa['created_at']) ?></td>
-                        <td><?= esc($mpesa['mpesa_receipt']) ?></td>
-                    </tr>
-                <?php endforeach; ?>
-            </tbody>
-        </table>
-
-        <!-- Pagination -->
-        <nav>
-            <ul class="pagination" id="mpesaPagination">
-                <?php
-                $totalPages = ceil($mpesaTotal / $perPage);
-                for ($i = 1; $i <= $totalPages; $i++): ?>
-                    <li class="page-item <?= $i == $mpesaPage ? 'active' : '' ?>">
-                        <a href="#" class="page-link" data-page="<?= $i ?>"><?= $i ?></a>
-                    </li>
-                <?php endfor; ?>
-            </ul>
-        </nav>
+        <?= view('admin/clients/partials/mpesa_table', [
+            'mpesaTransactions' => $mpesaTransactions,
+            'mpesaTotal' => $mpesaTotal,
+            'mpesaPage' => $mpesaPage,
+            'perPage' => $perPage
+        ]) ?>
     </div>
 </div>
 
-<!-- CSS & JS -->
 <style>
     .countdown {
         font-weight: bold;
@@ -153,9 +74,8 @@
                 let expiry = new Date(el.dataset.expiry);
                 let now = new Date();
                 let diff = expiry - now;
-                if (diff <= 0) {
-                    el.textContent = 'Expired';
-                } else {
+                if (diff <= 0) el.textContent = 'Expired';
+                else {
                     let days = Math.floor(diff / (1000 * 60 * 60 * 24));
                     let hours = Math.floor((diff / (1000 * 60 * 60)) % 24);
                     let mins = Math.floor((diff / (1000 * 60)) % 60);
@@ -167,26 +87,20 @@
         setInterval(updateCountdowns, 1000);
         updateCountdowns();
 
-        // --- AJAX Pagination ---
         function loadTable(tableType, page, status) {
-            const clientId = <?= $client['id'] ?>;
             const url = '<?= base_url("/admin/clients/view/" . $client["id"]) ?>';
-            fetch(`${url}?${tableType}_page=${page}&${tableType}_status=${status}`, {
+            fetch(`${url}?table=${tableType}&${tableType}_page=${page}&${tableType}_status=${status}`, {
                     headers: {
                         'X-Requested-With': 'XMLHttpRequest'
                     }
                 })
                 .then(res => res.text())
                 .then(html => {
-                    if (tableType === 'subscriptions') {
-                        document.getElementById('subscriptionsTable').innerHTML = html;
-                    } else {
-                        document.getElementById('mpesaTable').innerHTML = html;
-                    }
+                    if (tableType === 'subscriptions') document.getElementById('subscriptionsTable').innerHTML = html;
+                    else document.getElementById('mpesaTable').innerHTML = html;
                 });
         }
 
-        // Subscriptions Pagination Click
         document.addEventListener('click', function(e) {
             if (e.target.closest('#subscriptionsPagination a')) {
                 e.preventDefault();
@@ -202,7 +116,6 @@
             }
         });
 
-        // Status Filters Change
         document.getElementById('subscriptionsStatus').addEventListener('change', function() {
             loadTable('subscriptions', 1, this.value);
         });
