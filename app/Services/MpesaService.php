@@ -229,26 +229,26 @@ class MpesaService
      */
     public function handleCallback(array $payload): array
     {
-        $checkoutRequestId = null;
         try {
             if (empty($payload['Body']['stkCallback'])) {
-                $this->logger->error("Invalid callback payload (missing stkCallback)", $payload);
+                $this->logger->error("Invalid callback payload", $payload);
                 return ['ResultCode' => 1, 'ResultDesc' => 'Invalid payload'];
             }
 
             $callback = $payload['Body']['stkCallback'];
-            $merchantRequestId = $callback['MerchantRequestID'] ?? null;
             $checkoutRequestId = $callback['CheckoutRequestID'] ?? null;
+            $merchantRequestId = $callback['MerchantRequestID'] ?? null;
             $resultCode = (int)($callback['ResultCode'] ?? 1);
             $resultDesc = $callback['ResultDesc'] ?? '';
 
-            $this->logger->info("Received callback", [
-                'merchant_request_id' => $merchantRequestId,
-                'checkout_request_id' => $checkoutRequestId,
-                'result_code' => $resultCode,
-                'result_desc' => $resultDesc
+            $this->logger->info("Received STK callback", [
+                'checkoutRequestId' => $checkoutRequestId,
+                'merchantRequestId' => $merchantRequestId,
+                'resultCode' => $resultCode,
+                'resultDesc' => $resultDesc
             ]);
 
+            // Find or safely create the transaction
             $transaction = $this->transactionModel->where('checkout_request_id', $checkoutRequestId)->first();
             if (!$transaction) {
                 $transaction = $this->safeInsertTransaction($merchantRequestId, $checkoutRequestId);
@@ -262,8 +262,104 @@ class MpesaService
                 return $this->markTransactionFailed($transaction, $resultCode, $resultDesc);
             }
 
-            return $this->processSuccessfulCallback($transaction, $callback, $resultDesc, $checkoutRequestId);
+            // Extract callback metadata
+            $metadata = $callback['CallbackMetadata']['Item'] ?? [];
+            $amount = $mpesaReceipt = $phone = $transactionDate = null;
+            foreach ($metadata as $item) {
+                switch ($item['Name'] ?? null) {
+                    case 'Amount':
+                        $amount = $item['Value'];
+                        break;
+                    case 'MpesaReceiptNumber':
+                        $mpesaReceipt = $item['Value'];
+                        break;
+                    case 'PhoneNumber':
+                        $phone = $item['Value'];
+                        break;
+                    case 'TransactionDate':
+                        $transactionDate = isset($item['Value'])
+                            ? \DateTime::createFromFormat('YmdHis', substr((string)$item['Value'], 0, 14))->format('Y-m-d H:i:s')
+                            : date('Y-m-d H:i:s');
+                        break;
+                }
+            }
+
+            if (empty($mpesaReceipt)) $mpesaReceipt = 'UNKNOWN_' . $transaction['id'];
+
+            // Start atomic transaction
+            $this->db->transStart();
+
+            // Update transaction
+            $this->transactionModel->update($transaction['id'], [
+                'amount' => $amount ?? $transaction['amount'],
+                'phone_number' => $phone ?? $transaction['phone_number'],
+                'mpesa_receipt_number' => $mpesaReceipt,
+                'transaction_date' => $transactionDate ?? $transaction['transaction_date'],
+                'status' => 'Success',
+                'result_code' => 0,
+                'result_desc' => $resultDesc,
+                'updated_at' => date('Y-m-d H:i:s')
+            ]);
+
+            // Update or create payment
+            $paymentData = [
+                'mpesa_transaction_id' => $transaction['id'],
+                'client_id' => $transaction['client_id'],
+                'package_id' => $transaction['package_id'],
+                'amount' => $amount ?? $transaction['amount'],
+                'payment_method' => 'mpesa',
+                'status' => 'completed',
+                'mpesa_receipt_number' => $mpesaReceipt,
+                'phone' => $phone,
+                'transaction_date' => $transactionDate,
+                'created_at' => date('Y-m-d H:i:s')
+            ];
+
+            $paymentRow = $this->paymentsModel->where('mpesa_transaction_id', $transaction['id'])->first();
+            $paymentId = $paymentRow
+                ? $this->paymentsModel->update($paymentRow['id'], $paymentData)
+                : $this->paymentsModel->insert($paymentData, true);
+
+            // Expire old subscriptions
+            $subscriptionModel = new \App\Models\SubscriptionModel();
+            $activeSubs = $subscriptionModel
+                ->where('client_id', $transaction['client_id'])
+                ->where('package_id', $transaction['package_id'])
+                ->where('status', 'active')
+                ->findAll();
+            foreach ($activeSubs as $sub) {
+                $subscriptionModel->update($sub['id'], ['status' => 'expired', 'updated_at' => date('Y-m-d H:i:s')]);
+            }
+
+            // Create new subscription
+            $startDate = date('Y-m-d H:i:s');
+            $package = $this->packageModel->find($transaction['package_id']);
+            $expiresOn = $this->calculateSubscriptionExpiry($package, $startDate);
+
+            $subId = $subscriptionModel->insert([
+                'client_id' => $transaction['client_id'],
+                'package_id' => $transaction['package_id'],
+                'payment_id' => $paymentId,
+                'start_date' => $startDate,
+                'expires_on' => $expiresOn,
+                'status' => 'active'
+            ], true);
+
+            // Call activation service
+            $activationService = new ActivationService($this->logger);
+            $activationService->activate($transaction['client_id'], $transaction['package_id'], (float)$amount);
+
+            $this->db->transComplete();
+
+            $this->logger->info("Callback processed successfully", [
+                'checkoutRequestId' => $checkoutRequestId,
+                'mpesaReceipt' => $mpesaReceipt,
+                'subscription_id' => $subId
+            ]);
+
+            return ['ResultCode' => 0, 'ResultDesc' => 'Callback processed successfully'];
         } catch (\Throwable $e) {
+            $this->db->transRollback();
             $this->logger->error("Exception in handleCallback", [
                 'message' => $e->getMessage(),
                 'file' => $e->getFile(),
