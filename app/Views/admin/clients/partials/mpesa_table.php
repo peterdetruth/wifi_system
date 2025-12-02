@@ -23,7 +23,7 @@
                 <td><?= esc($mpesa['transaction_date']) ?></td>
                 <td><?= esc(ucfirst($mpesa['status'])) ?></td>
                 <td><?= esc($mpesa['created_at']) ?></td>
-                <td><?= esc($mpesa['mpesa_receipt']) ?></td>
+                <td><?= esc($mpesa['mpesa_receipt_number']) ?></td>
             </tr>
         <?php endforeach; ?>
     </tbody>

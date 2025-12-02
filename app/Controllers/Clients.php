@@ -212,7 +212,7 @@ class Clients extends BaseController
         $mpesaStatus = $this->request->getGet('mpesa_status');
 
         $mpesaBuilder = $db->table('mpesa_transactions m')
-            ->select('m.id, m.transaction_id, m.amount, m.phone_number, m.transaction_date, m.status, m.created_at, m.mpesa_receipt, p.name AS package_name')
+            ->select('m.id, m.transaction_id, m.amount, m.phone_number, m.transaction_date, m.status, m.created_at, m.mpesa_receipt_number, p.name AS package_name')
             ->join('packages p', 'p.id = m.package_id', 'left')
             ->where('m.client_id', $id)
             ->orderBy('m.created_at', 'DESC');
