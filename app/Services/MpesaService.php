@@ -34,16 +34,12 @@ class MpesaService
         float $amount,
         string $phone
     ): ?string {
-        $checkoutRequestId = null;
         try {
             $client = $this->clientModel->find($clientId);
             $package = $this->packageModel->find($packageId);
 
             if (!$client || !$package) {
-                $this->logger->error("Client or package not found for STK push", [
-                    'clientId' => $clientId,
-                    'packageId' => $packageId
-                ]);
+                $this->logger->error("Client or package not found for STK push", compact('clientId', 'packageId'));
                 return null;
             }
 
@@ -53,23 +49,33 @@ class MpesaService
             $stkPayload = $this->buildStkPayload($client, $package, $amount, $phone);
             $stkResponse = $this->sendStkPush($accessToken, $stkPayload);
 
-            if (!is_array($stkResponse) || !isset($stkResponse['ResponseCode']) || $stkResponse['ResponseCode'] !== "0") {
-                $this->logger->error("STK push failed", $stkResponse ?? []);
+            // STK push failed, create fallback transaction
+            if (!is_array($stkResponse) || ($stkResponse['ResponseCode'] ?? '') !== "0") {
+                $this->logger->warning("STK push failed, creating fallback transaction", $stkResponse ?? []);
                 return $this->createFallbackTransaction($clientId, $packageId, $amount, $phone, $package);
             }
 
+            // Save pending transaction
             $checkoutRequestId = $this->savePendingTransaction($clientId, $packageId, $amount, $phone, $stkResponse);
+            $this->logger->info("STK push initiated successfully", [
+                'checkoutRequestId' => $checkoutRequestId,
+                'clientId' => $clientId,
+                'packageId' => $packageId
+            ]);
+
+            return $checkoutRequestId;
         } catch (\Throwable $e) {
             $this->logger->error("Exception in initiateTransaction", [
                 'message' => $e->getMessage(),
-                'file' => $e->getFile(),
-                'line' => $e->getLine()
+                'clientId' => $clientId,
+                'packageId' => $packageId
             ]);
-            $checkoutRequestId = $this->createFallbackTransaction($clientId, $packageId, $amount, $phone, $package ?? null);
-        }
 
-        return $checkoutRequestId;
+            // fallback on exception
+            return $this->createFallbackTransaction($clientId, $packageId, $amount, $phone, $package ?? null);
+        }
     }
+
 
     private function requestAccessToken(): ?string
     {
