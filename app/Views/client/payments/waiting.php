@@ -46,19 +46,23 @@
     </style>
 
     <script>
-        // 🔄 Poll payment status every 5 seconds
-        setInterval(function () {
-            fetch("<?= base_url('/client/payments/checkStatus') ?>")
-                .then(response => response.json())
+        const checkoutRequestId = '<?= esc($checkoutRequestId) ?>';
+
+        function pollPayment() {
+            fetch("<?= site_url('client/payments/status/') ?>" + checkoutRequestId)
+                .then(res => res.json())
                 .then(data => {
-                    if (data.status === "success") {
-                        window.location.href = "<?= base_url('/client/payments/success') ?>/" + data.transaction_id;
+                    if (data.status.toLowerCase() === 'success') {
+                        window.location.href = "<?= site_url('client/payments/success/') ?>" + checkoutRequestId;
+                    } else {
+                        setTimeout(pollPayment, 3000); // poll every 3 seconds
                     }
                 })
                 .catch(err => console.error("Status check error:", err));
-        }, 5000);
-    </script>
+        }
 
+        pollPayment();
+    </script>
 </head>
 <body>
 

@@ -12,6 +12,7 @@ use App\Models\ClientModel;
 use App\Services\ActivationService;
 use App\Services\MpesaLogger;
 use App\Services\MpesaService;
+use App\Libraries\RouterSync;
 
 class Payments extends BaseController
 {
@@ -25,6 +26,8 @@ class Payments extends BaseController
     protected $mpesaLogger;
     protected $activationService;
     protected $mpesaService;
+
+    protected RouterSync $routerSync;
 
     public function __construct()
     {
@@ -40,6 +43,9 @@ class Payments extends BaseController
         $this->mpesaLogger = new MpesaLogger();
         $this->activationService = new ActivationService($this->mpesaLogger);
         $this->mpesaService = new MpesaService($this->mpesaLogger);
+
+        // Library handles router provisioning
+        $this->routerSync = new RouterSync();
     }
 
     public function checkout($packageId)
@@ -76,7 +82,7 @@ class Payments extends BaseController
         $phone = $phone ?: ($client['phone'] ?? '');
         $clientUsername = $client['username'] ?? 'Unknown';
 
-        // Voucher redemption
+        // --- Voucher redemption ---
         if (!empty($voucherCode)) {
             mpesa_debug("Voucher detected — checking validity ({$voucherCode})");
             $voucher = $this->voucherModel->isValidVoucher($voucherCode);
@@ -92,16 +98,31 @@ class Payments extends BaseController
                 $this->voucherModel->markAsUsed($voucherCode, $clientId);
 
                 mpesa_debug("✅ Voucher successfully redeemed for {$clientUsername}.");
-                // Use transaction ID 0 to indicate voucher redemption
-                return redirect()->to('/client/payments/success/0')
-                    ->with('success', 'Voucher redeemed successfully! Subscription activated.');
+
+                // Provision router automatically
+                try {
+                    $syncResult = $this->routerSync->addUserToRouter($client, $package);
+                } catch (\Throwable $e) {
+                    log_message('error', 'Router sync failed: ' . $e->getMessage());
+                    $syncResult = [
+                        'success' => false,
+                        'message' => 'Router provisioning failed. Please contact support.'
+                    ];
+                }
+
+                return view('client/payments/success', [
+                    'transaction' => ['id' => 0, 'voucher' => $voucherCode],
+                    'client' => $client,
+                    'package' => $package,
+                    'router_sync' => $syncResult
+                ]);
             } catch (\Throwable $e) {
                 mpesa_debug("❌ Voucher redemption failed: " . $e->getMessage());
                 return redirect()->back()->with('error', 'Voucher redemption failed: ' . $e->getMessage());
             }
         }
 
-        // M-PESA payment
+        // --- M-PESA payment ---
         $amount = (float)$package['price'];
         if ($amount <= 0) {
             mpesa_debug("❌ Invalid amount: {$amount}");
@@ -111,7 +132,6 @@ class Payments extends BaseController
         try {
             mpesa_debug("🔸 Initiating M-PESA transaction for client {$clientUsername} (clientId={$clientId}, packageId={$packageId}, amount={$amount})");
 
-            // initiateTransaction now returns checkoutRequestId or fallback transaction id (string/int)
             $checkoutRequestId = $this->mpesaService->initiateTransaction(
                 $clientId,
                 $packageId,
@@ -124,78 +144,98 @@ class Payments extends BaseController
                 throw new \Exception("Failed to initiate M-PESA transaction.");
             }
 
-            mpesa_debug("✅ M-PESA transaction initiated for client {$clientUsername} — checkoutRequestId: {$checkoutRequestId}");
+            mpesa_debug("✅ M-PESA transaction initiated — checkoutRequestId: {$checkoutRequestId}");
 
-            return view('client/payments/waiting', [
-                // kept for backwards compatibility; waiting view will show phone & poll status
-                'checkoutRequestId' => $checkoutRequestId,
-                'amount' => $amount,
-                'phone' => $phone
-            ]);
+            // Redirect to waiting page for polling
+            return redirect()->to('/client/payments/waiting/' . $checkoutRequestId);
         } catch (\Throwable $e) {
             mpesa_debug("❌ Error initiating payment: " . $e->getMessage());
             return redirect()->back()->with('error', 'Failed to initiate payment: ' . $e->getMessage());
         }
     }
 
-
-    public function waiting($clientPackageId = null)
+    public function waiting($checkoutRequestId = null)
     {
-        if (!$clientPackageId) {
-            return redirect()->to('/client/dashboard')
-                ->with('error', 'Invalid payment reference.');
+        if (!$checkoutRequestId) {
+            return redirect()->to('/client/dashboard')->with('error', 'Invalid transaction reference.');
         }
 
-        return view('client/payments/waiting', ['clientPackageId' => $clientPackageId]);
-    }
-
-    public function success($transactionId)
-    {
         $clientId = session()->get('client_id');
-        if (!$clientId) return redirect()->to('/client/login');
-
-        $transaction = null;
-        $package = null;
-
-        if ($transactionId > 0) {
-            $transaction = $this->transactionModel
-                ->where('id', $transactionId)
-                ->where('client_id', $clientId)
-                ->first();
+        if (!$clientId) {
+            return redirect()->to('/client/login')->with('error', 'Please login.');
         }
 
-        if ($transaction) {
-            $package = $this->packageModel->find($transaction['package_id']);
-            $expiresOn = $transaction['expires_on'] ?? date('Y-m-d H:i:s', strtotime('+' . $package['duration_length'] . ' ' . $package['duration_unit']));
-        } else {
-            // Fallback: use last activated subscription
-            $clientPackage = $this->subscriptionModel
-                ->where('client_id', $clientId)
-                ->orderBy('id', 'DESC')
-                ->first();
+        // Find client to display phone
+        $client = $this->clientModel->find($clientId);
+        $mpesaTx = $this->mpesaTransactionModel
+            ->where('checkout_request_id', $checkoutRequestId)
+            ->first();
 
-            if ($clientPackage) {
-                $package = $this->packageModel->find($clientPackage['package_id']);
-                $expiresOn = $clientPackage['expires_on'] ?? date('Y-m-d H:i:s', strtotime('+' . $package['duration_length'] . ' ' . $package['duration_unit']));
-            } else {
-                return redirect()->to('/client/dashboard')->with('error', 'Transaction not found.');
-            }
-        }
+        $phone = $mpesaTx['phone'] ?? $client['phone'] ?? '';
 
-        return view('client/payments/success', [
-            'package' => $package,
-            'subscription' => [
-                'expires_on' => $expiresOn
-            ]
+        return view('client/payments/waiting', [
+            'checkoutRequestId' => $checkoutRequestId,
+            'phone' => $phone
         ]);
     }
 
-    public function pending($checkoutRequestID = null)
+    /**
+     * Payment success page
+     */
+    public function success($checkoutRequestID = null)
     {
-        if (!$checkoutRequestID) return redirect()->to('/client/dashboard')->with('error', 'Invalid transaction reference.');
+        $clientId = session()->get('client_id');
+        if (!$clientId) {
+            return redirect()->to('/client/login')->with('error', 'Please login.');
+        }
 
-        return view('client/payments/pending', ['checkoutRequestID' => $checkoutRequestID]);
+        $mpesaTx = null;
+        $subscription = null;
+
+        // --- 1️⃣ Try to find M-PESA transaction if ID provided ---
+        if ($checkoutRequestID) {
+            $mpesaTx = $this->mpesaTransactionModel
+                ->where('checkout_request_id', $checkoutRequestID)
+                ->first();
+        }
+
+        // --- 2️⃣ Find the latest subscription for this client ---
+        $subscription = $this->subscriptionModel
+            ->where('client_id', $clientId)
+            ->orderBy('id', 'DESC')
+            ->first();
+
+        if (!$subscription) {
+            return redirect()->to('/client/dashboard')->with('error', 'Subscription not found.');
+        }
+
+        $package = $this->packageModel->find($subscription['package_id']);
+        $client = $this->clientModel->find($clientId);
+
+        // --- 3️⃣ Router provisioning ---
+        try {
+            $syncResult = $this->routerSync->addUserToRouter($client, $package);
+        } catch (\Throwable $e) {
+            log_message('error', 'Router sync failed: ' . $e->getMessage());
+            $syncResult = [
+                'success' => false,
+                'message' => 'Router provisioning failed. Please contact support.'
+            ];
+        }
+
+        // --- 4️⃣ Prepare data for view ---
+        $data = [
+            'mpesaTx' => $mpesaTx,
+            'subscription' => $subscription,
+            'client' => $client,
+            'package' => $package,
+            'router_sync' => $syncResult
+        ];
+
+        return view('client/payments/success', $data);
     }
+
+
 
     public function checkStatus()
     {
@@ -233,31 +273,5 @@ class Payments extends BaseController
         if (!$transaction) return $this->response->setJSON(['status' => 'NotFound']);
 
         return $this->response->setJSON(['status' => $transaction['status']]);
-    }
-
-    private function calculateExpiry($length, $unit)
-    {
-        $unit = strtolower(trim($unit));
-        switch ($unit) {
-            case 'minutes':
-            case 'minute':
-                $interval = "+$length minutes";
-                break;
-            case 'hours':
-            case 'hour':
-                $interval = "+$length hours";
-                break;
-            case 'days':
-            case 'day':
-                $interval = "+$length days";
-                break;
-            case 'months':
-            case 'month':
-                $interval = "+$length months";
-                break;
-            default:
-                $interval = "+$length days";
-        }
-        return date('Y-m-d H:i:s', strtotime($interval));
     }
 }

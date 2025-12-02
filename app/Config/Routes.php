@@ -167,8 +167,8 @@ $routes->group('client', ['namespace' => 'App\Controllers\Client'], static funct
         $routes->get('payments', 'Payments::index');
         $routes->get('payments/checkout/(:num)', 'Payments::checkout/$1');
         $routes->get('payments/buy/(:num)', 'Payments::buy/$1');
-        $routes->get('payments/success/(:num)', 'Payments::success/$1');
-        $routes->get('payments/waiting/(:num)', 'Payments::waiting/$1');
+        $routes->get('payments/success/(:any)', 'Payments::success/$1');
+        $routes->get('payments/waiting/(:any)', 'Payments::waiting/$1');
         $routes->get('payments/pending', 'Payments::pending');
         $routes->get('payments/initiate/(:num)', 'Payments::initiatePayment/$1');
         $routes->post('payments/process', 'Payments::process');
