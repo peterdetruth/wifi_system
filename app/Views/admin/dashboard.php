@@ -24,268 +24,149 @@ $voucherValuesJson = htmlspecialchars(json_encode($voucherValues ?? []), ENT_QUO
      data-month="<?= esc($month ?? date('m')) ?>"
      data-year="<?= esc($year ?? date('Y')) ?>"
 >
-    <div class="container-fluid py-3">
-        <h3 class="mb-4">Admin Dashboard</h3>
+    <div class="container-fluid py-4">
+
+        <h3 class="mb-4 text-primary">Admin Dashboard</h3>
 
         <!-- KPI Cards (unchanged) -->
         <div class="row g-3 mb-4">
-            <div class="col-md-3">
-                <div class="card kpi-card">
-                    <div class="card-body text-center">
-                        <h6>Clients</h6>
-                        <h2 class="count" data-target="<?= esc($totalClients ?? 0) ?>">0</h2>
+            <?php 
+            $kpis = [
+                ['title' => 'Clients', 'value' => $totalClients, 'bg' => 'bg-primary text-white'],
+                ['title' => 'Packages', 'value' => $totalPackages, 'bg' => 'bg-info text-white'],
+                ['title' => 'Revenue (KES)', 'value' => number_format($totalRevenue,2), 'bg' => 'bg-success text-white'],
+                ['title' => 'Active Subscriptions', 'value' => $activeSubscriptions, 'bg' => 'bg-warning text-dark']
+            ];
+            foreach ($kpis as $kpi):
+            ?>
+                <div class="col-md-3">
+                    <div class="card shadow-sm <?= $kpi['bg'] ?> rounded-3">
+                        <div class="card-body text-center">
+                            <h6 class="mb-2"><?= esc($kpi['title']) ?></h6>
+                            <h2 class="count" data-target="<?= esc($kpi['value']) ?>">0</h2>
+                        </div>
                     </div>
                 </div>
-            </div>
-            <div class="col-md-3">
-                <div class="card kpi-card">
-                    <div class="card-body text-center">
-                        <h6>Packages</h6>
-                        <h2 class="count" data-target="<?= esc($totalPackages ?? 0) ?>">0</h2>
-                    </div>
-                </div>
-            </div>
-            <div class="col-md-3">
-                <div class="card kpi-card">
-                    <div class="card-body text-center">
-                        <h6>Revenue (KES)</h6>
-                        <h2 class="count" data-target="<?= esc($totalRevenue ?? 0) ?>"><?= number_format($totalRevenue ?? 0, 2) ?></h2>
-                    </div>
-                </div>
-            </div>
-            <div class="col-md-3">
-                <div class="card kpi-card">
-                    <div class="card-body text-center">
-                        <h6>Active Subscriptions</h6>
-                        <h2 class="count" data-target="<?= esc($activeSubscriptions ?? 0) ?>">0</h2>
-                    </div>
-                </div>
-            </div>
+            <?php endforeach; ?>
         </div>
 
         <!-- Secondary KPIs (unchanged) -->
         <div class="row g-3 mb-4">
-            <div class="col-md-3">
-                <div class="card kpi-card-alt">
-                    <div class="card-body text-center">
-                        <h6>New Subscriptions (Today)</h6>
-                        <div class="kpi-small"><?= esc($newSubscriptionsToday ?? 0) ?></div>
+            <?php 
+            $secondaryKpis = [
+                ['title'=>'New Subs Today', 'value'=>$newSubscriptionsToday,'bg'=>'bg-light'],
+                ['title'=>'New Subs Month', 'value'=>$newSubscriptionsMonth,'bg'=>'bg-light'],
+                ['title'=>'Pending Payments','value'=>$pendingPayments,'bg'=>'bg-light'],
+                ['title'=>'Inactive Users','value'=>$inactiveUsers,'bg'=>'bg-light']
+            ];
+            foreach($secondaryKpis as $kpi):
+            ?>
+                <div class="col-md-3">
+                    <div class="card shadow-sm <?= $kpi['bg'] ?> rounded-3">
+                        <div class="card-body text-center">
+                            <h6 class="mb-1"><?= esc($kpi['title']) ?></h6>
+                            <div class="h4"><?= esc($kpi['value']) ?></div>
+                        </div>
                     </div>
                 </div>
-            </div>
-            <div class="col-md-3">
-                <div class="card kpi-card-alt">
-                    <div class="card-body text-center">
-                        <h6>New Subscriptions (Month)</h6>
-                        <div class="kpi-small"><?= esc($newSubscriptionsMonth ?? 0) ?></div>
-                    </div>
-                </div>
-            </div>
-            <div class="col-md-3">
-                <div class="card kpi-card-alt">
-                    <div class="card-body text-center">
-                        <h6>Pending Payments</h6>
-                        <div class="kpi-small"><?= esc($pendingPayments ?? 0) ?></div>
-                    </div>
-                </div>
-            </div>
-            <div class="col-md-3">
-                <div class="card kpi-card-alt">
-                    <div class="card-body text-center">
-                        <h6>Inactive Users</h6>
-                        <div class="kpi-small"><?= esc($inactiveUsers ?? 0) ?></div>
-                    </div>
-                </div>
-            </div>
+            <?php endforeach; ?>
         </div>
 
         <!-- Charts (unchanged) -->
         <div class="row g-4 mb-4">
             <div class="col-md-6">
-                <div class="card shadow-sm">
-                    <div class="card-header bg-light"><strong>Revenue (<?= esc($month ?? date('m')) ?>/<?= esc($year ?? date('Y')) ?>)</strong></div>
-                    <div class="card-body"><canvas id="revenueChart"></canvas></div>
+                <div class="card shadow-sm rounded-3">
+                    <div class="card-header bg-white border-bottom"><strong>Revenue (<?= esc($month) ?>/<?= esc($year) ?>)</strong></div>
+                    <div class="card-body">
+                        <canvas id="revenueChart" style="width:100%; height:250px;"></canvas>
+                    </div>
                 </div>
             </div>
             <div class="col-md-6">
-                <div class="card shadow-sm">
-                    <div class="card-header bg-light"><strong>Voucher Usage (<?= esc($month ?? date('m')) ?>/<?= esc($year ?? date('Y')) ?>)</strong></div>
-                    <div class="card-body"><canvas id="voucherChart"></canvas></div>
+                <div class="card shadow-sm rounded-3">
+                    <div class="card-header bg-white border-bottom"><strong>Voucher Usage (<?= esc($month) ?>/<?= esc($year) ?>)</strong></div>
+                    <div class="card-body">
+                        <canvas id="voucherChart" style="width:100%; height:250px;"></canvas>
+                    </div>
                 </div>
             </div>
         </div>
 
-        <!-- Expiring Subscriptions -->
-        <div class="card shadow-sm mb-4">
-            <div class="card-header bg-danger text-white"><strong>Expiring Within 24 Hours</strong></div>
-            <div class="card-body p-0">
-                <?php if (empty($expiringSoon)): ?>
-                    <p class="p-3 text-muted">No subscriptions expiring soon.</p>
-                <?php else: ?>
-                    <table class="table table-hover mb-0">
-                        <thead class="table-danger">
-                            <tr>
-                                <th>#</th>
-                                <th>Client</th>
-                                <th>Package</th>
-                                <th>Expires On</th>
-                                <th>Countdown</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            <?php $i = 1; foreach ($expiringSoon as $s): ?>
-                                <tr>
-                                    <td><?= $i++ ?></td>
-                                    <td><?= esc($s['client_username']) ?></td>
-                                    <td><?= esc($s['package_name']) ?></td>
-                                    <td><?= date('d M Y, H:i', strtotime($s['expires_on'])) ?></td>
-                                    <td><span class="countdown" data-expiry="<?= esc($s['expires_on']) ?>"></span></td>
-                                </tr>
-                            <?php endforeach; ?>
-                        </tbody>
-                    </table>
-                <?php endif; ?>
-            </div>
-        </div>
+        <!-- Tables -->
+        <?php 
+        $tables = [
+            ['title'=>'Expiring Within 24 Hours','data'=>$expiringSoon,'columns'=>['#','Client','Package','Expires On','Countdown'],'class'=>'table-danger'],
+            ['title'=>'Recent Payments','data'=>$recentTransactions,'columns'=>['ID','Client','Package','Amount','Status'],'class'=>'table-striped'],
+            ['title'=>'Recent Clients','data'=>$recentClients,'columns'=>['#','Username','Email','Joined'],'class'=>'table-striped'],
+            ['title'=>'Recent Subscriptions','data'=>$recentSubscriptions,'columns'=>['#','Client','Package','Status','Created At'],'class'=>'table-striped'],
+            ['title'=>'Recently Expired / Cancelled','data'=>$recentlyExpired,'columns'=>['#','Client','Package','Status','Expires On'],'class'=>'table-striped'],
+        ];
+        ?>
 
-        <!-- Recent Payments -->
-        <div class="row g-4">
-            <div class="col-md-6">
-                <div class="card shadow-sm mb-4">
-                    <div class="card-header bg-light"><strong>Recent Payments</strong></div>
-                    <div class="card-body p-0">
-                        <?php if (empty($recentTransactions)): ?>
-                            <p class="p-3 text-muted">No payments yet.</p>
-                        <?php else: ?>
-                            <table class="table table-striped mb-0">
-                                <thead>
+        <?php foreach($tables as $t): ?>
+            <div class="card shadow-sm mb-4 rounded-3">
+                <div class="card-header <?= $t['title']=='Expiring Within 24 Hours'?'bg-danger text-white':'bg-white border-bottom' ?>"><strong><?= $t['title'] ?></strong></div>
+                <div class="card-body p-0">
+                    <?php if(empty($t['data'])): ?>
+                        <p class="p-3 text-muted">No records available.</p>
+                    <?php else: ?>
+                        <div class="table-responsive">
+                            <table class="table <?= $t['class'] ?> table-hover align-middle mb-0">
+                                <thead class="table-light">
                                     <tr>
-                                        <th>ID</th>
-                                        <th>Client</th>
-                                        <th>Package</th>
-                                        <th>Amount</th>
-                                        <th>Status</th>
+                                        <?php foreach($t['columns'] as $col): ?>
+                                            <th><?= $col ?></th>
+                                        <?php endforeach; ?>
                                     </tr>
                                 </thead>
                                 <tbody>
-                                    <?php foreach ($recentTransactions as $t): ?>
+                                    <?php $i=1; foreach($t['data'] as $row): ?>
                                         <tr>
-                                            <td>#<?= esc($t['id']) ?></td>
-                                            <td><?= esc($t['client_username']) ?></td>
-                                            <td><?= esc($t['package_name']) ?></td>
-                                            <td>KES <?= number_format($t['amount'], 2) ?></td>
-                                            <td>
-                                                <span class="badge <?= ($t['status'] === 'completed') ? 'bg-success' : (($t['status'] === 'failed') ? 'bg-danger' : 'bg-warning text-dark') ?>">
-                                                    <?= ucfirst(esc($t['status'])) ?>
-                                                </span>
-                                            </td>
+                                            <?php
+                                            // Dynamic row rendering based on table type
+                                            if($t['title']=='Expiring Within 24 Hours'): ?>
+                                                <td><?= $i++ ?></td>
+                                                <td><?= esc($row['client_username']) ?></td>
+                                                <td><?= esc($row['package_name']) ?></td>
+                                                <td><?= date('d M Y, H:i', strtotime($row['expires_on'])) ?></td>
+                                                <td><span class="countdown" data-expiry="<?= esc($row['expires_on']) ?>"></span></td>
+                                            <?php elseif($t['title']=='Recent Payments'): ?>
+                                                <td>#<?= esc($row['id']) ?></td>
+                                                <td><?= esc($row['client_username']) ?></td>
+                                                <td><?= esc($row['package_name']) ?></td>
+                                                <td>KES <?= number_format($row['amount'],2) ?></td>
+                                                <td>
+                                                    <span class="badge <?= $row['status']==='completed'?'bg-success':($row['status']==='failed'?'bg-danger':'bg-warning text-dark') ?>">
+                                                        <?= ucfirst(esc($row['status'])) ?>
+                                                    </span>
+                                                </td>
+                                            <?php elseif($t['title']=='Recent Clients'): ?>
+                                                <td><?= esc($row['id']) ?></td>
+                                                <td><?= esc($row['username']) ?></td>
+                                                <td><?= esc($row['email'] ?? '') ?></td>
+                                                <td><?= date('d M Y', strtotime($row['created_at'])) ?></td>
+                                            <?php elseif($t['title']=='Recent Subscriptions'): ?>
+                                                <td><?= esc($row['id']) ?></td>
+                                                <td><?= esc($row['client_username']) ?></td>
+                                                <td><?= esc($row['package_name']) ?></td>
+                                                <td><?= ucfirst(esc($row['status'])) ?></td>
+                                                <td><?= date('d M Y, H:i', strtotime($row['created_at'])) ?></td>
+                                            <?php elseif($t['title']=='Recently Expired / Cancelled'): ?>
+                                                <td><?= esc($row['id']) ?></td>
+                                                <td><?= esc($row['client_username']) ?></td>
+                                                <td><?= esc($row['package_name']) ?></td>
+                                                <td><?= ucfirst(esc($row['status'])) ?></td>
+                                                <td><?= date('d M Y, H:i', strtotime($row['expires_on'])) ?></td>
+                                            <?php endif; ?>
                                         </tr>
                                     <?php endforeach; ?>
                                 </tbody>
                             </table>
-                        <?php endif; ?>
-                    </div>
+                        </div>
+                    <?php endif; ?>
                 </div>
             </div>
-
-            <!-- Recent Clients -->
-            <div class="col-md-6">
-                <div class="card shadow-sm mb-4">
-                    <div class="card-header bg-light"><strong>Recent Clients</strong></div>
-                    <div class="card-body p-0">
-                        <?php if (empty($recentClients)): ?>
-                            <p class="p-3 text-muted">No clients yet.</p>
-                        <?php else: ?>
-                            <table class="table table-striped mb-0">
-                                <thead><tr><th>#</th><th>Username</th><th>Email</th><th>Joined</th></tr></thead>
-                                <tbody>
-                                    <?php foreach ($recentClients as $c): ?>
-                                        <tr>
-                                            <td><?= esc($c['id']) ?></td>
-                                            <td><?= esc($c['username']) ?></td>
-                                            <td><?= esc($c['email'] ?? '') ?></td>
-                                            <td><?= date('d M Y', strtotime($c['created_at'])) ?></td>
-                                        </tr>
-                                    <?php endforeach; ?>
-                                </tbody>
-                            </table>
-                        <?php endif; ?>
-                    </div>
-                </div>
-            </div>
-        </div>
-
-        <!-- Recent Subscriptions -->
-        <div class="row g-4">
-            <div class="col-md-6">
-                <div class="card shadow-sm mb-4">
-                    <div class="card-header bg-light"><strong>Recent Subscriptions</strong></div>
-                    <div class="card-body p-0">
-                        <?php if (empty($recentSubscriptions)): ?>
-                            <p class="p-3 text-muted">No subscriptions yet.</p>
-                        <?php else: ?>
-                            <table class="table table-striped mb-0">
-                                <thead>
-                                    <tr>
-                                        <th>#</th>
-                                        <th>Client</th>
-                                        <th>Package</th>
-                                        <th>Status</th>
-                                        <th>Created At</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    <?php foreach ($recentSubscriptions as $s): ?>
-                                        <tr>
-                                            <td><?= esc($s['id']) ?></td>
-                                            <td><?= esc($s['client_username']) ?></td>
-                                            <td><?= esc($s['package_name']) ?></td>
-                                            <td><?= ucfirst(esc($s['status'])) ?></td>
-                                            <td><?= date('d M Y, H:i', strtotime($s['created_at'])) ?></td>
-                                        </tr>
-                                    <?php endforeach; ?>
-                                </tbody>
-                            </table>
-                        <?php endif; ?>
-                    </div>
-                </div>
-            </div>
-
-            <!-- Recently Expired / Cancelled Subscriptions -->
-            <div class="col-md-6">
-                <div class="card shadow-sm mb-4">
-                    <div class="card-header bg-light"><strong>Recently Expired / Cancelled</strong></div>
-                    <div class="card-body p-0">
-                        <?php if (empty($recentlyExpired)): ?>
-                            <p class="p-3 text-muted">No recently expired or cancelled subscriptions.</p>
-                        <?php else: ?>
-                            <table class="table table-striped mb-0">
-                                <thead>
-                                    <tr>
-                                        <th>#</th>
-                                        <th>Client</th>
-                                        <th>Package</th>
-                                        <th>Status</th>
-                                        <th>Expires On</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    <?php foreach ($recentlyExpired as $s): ?>
-                                        <tr>
-                                            <td><?= esc($s['id']) ?></td>
-                                            <td><?= esc($s['client_username']) ?></td>
-                                            <td><?= esc($s['package_name']) ?></td>
-                                            <td><?= ucfirst(esc($s['status'])) ?></td>
-                                            <td><?= date('d M Y, H:i', strtotime($s['expires_on'])) ?></td>
-                                        </tr>
-                                    <?php endforeach; ?>
-                                </tbody>
-                            </table>
-                        <?php endif; ?>
-                    </div>
-                </div>
-            </div>
-        </div>
+        <?php endforeach; ?>
 
     </div>
 </div>
