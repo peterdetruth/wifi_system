@@ -110,6 +110,9 @@ $routes->group('admin/features', ['namespace' => 'App\Controllers\Admin'], funct
     $routes->get('delete/(:num)', 'Features::delete/$1');
 });
 
+$routes->get('admin/maintenance/schema', 'Admin\MaintenanceController::checkSchema');
+$routes->get('admin/maintenance/schema-detailed', 'Admin\MaintenanceController::checkSchema');
+
 // ==============================
 // 💸 M-PESA CALLBACK
 // ==============================
