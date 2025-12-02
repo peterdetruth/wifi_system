@@ -109,44 +109,26 @@ class Payments extends BaseController
         }
 
         try {
-            $db = \Config\Database::connect();
-            $db->transStart();
+            mpesa_debug("🔸 Initiating M-PESA transaction for client {$clientUsername} (clientId={$clientId}, packageId={$packageId}, amount={$amount})");
 
-            $subscriptionData = [
-                'client_id'  => $clientId,
-                'package_id' => $packageId,
-                'amount'     => $amount,
-                'start_date' => date('Y-m-d H:i:s'),
-                'end_date'   => $this->calculateExpiry($package['duration_length'], $package['duration_unit']),
-                'status'     => 'pending'
-            ];
-
-            $db->table('client_packages')->insert($subscriptionData);
-            $clientPackageId = $db->insertID();
-
-            $db->transComplete();
-
-            if ($db->transStatus() === false) {
-                $error = $db->error();
-                mpesa_debug("❌ DB Error inserting client_packages: " . json_encode($error));
-                throw new \Exception('Database commit failed during client_packages creation.');
-            }
-
-            mpesa_debug("🔹 Pending client_packages row created: {$clientPackageId}");
-
-            $success = $this->mpesaService->initiateTransaction(
+            // initiateTransaction now returns checkoutRequestId or fallback transaction id (string/int)
+            $checkoutRequestId = $this->mpesaService->initiateTransaction(
                 $clientId,
                 $packageId,
                 $amount,
                 $phone
             );
 
-            if (!$success) throw new \Exception("Failed to initiate M-PESA transaction.");
+            if (!$checkoutRequestId) {
+                mpesa_debug("❌ Failed to initiate M-PESA transaction (no checkout id returned).");
+                throw new \Exception("Failed to initiate M-PESA transaction.");
+            }
 
-            mpesa_debug("✅ M-PESA transaction initiated for client {$clientUsername}");
+            mpesa_debug("✅ M-PESA transaction initiated for client {$clientUsername} — checkoutRequestId: {$checkoutRequestId}");
 
             return view('client/payments/waiting', [
-                'clientPackageId' => $clientPackageId,
+                // kept for backwards compatibility; waiting view will show phone & poll status
+                'checkoutRequestId' => $checkoutRequestId,
                 'amount' => $amount,
                 'phone' => $phone
             ]);
@@ -155,6 +137,7 @@ class Payments extends BaseController
             return redirect()->back()->with('error', 'Failed to initiate payment: ' . $e->getMessage());
         }
     }
+
 
     public function waiting($clientPackageId = null)
     {
@@ -256,14 +239,22 @@ class Payments extends BaseController
     {
         $unit = strtolower(trim($unit));
         switch ($unit) {
-            case 'minutes': case 'minute':
-                $interval = "+$length minutes"; break;
-            case 'hours': case 'hour':
-                $interval = "+$length hours"; break;
-            case 'days': case 'day':
-                $interval = "+$length days"; break;
-            case 'months': case 'month':
-                $interval = "+$length months"; break;
+            case 'minutes':
+            case 'minute':
+                $interval = "+$length minutes";
+                break;
+            case 'hours':
+            case 'hour':
+                $interval = "+$length hours";
+                break;
+            case 'days':
+            case 'day':
+                $interval = "+$length days";
+                break;
+            case 'months':
+            case 'month':
+                $interval = "+$length months";
+                break;
             default:
                 $interval = "+$length days";
         }
