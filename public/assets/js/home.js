@@ -1,155 +1,174 @@
-document.addEventListener('DOMContentLoaded', function() {
+document.addEventListener("DOMContentLoaded", () => {
 
-    // Toggle package form
-    document.querySelectorAll('.toggle-form').forEach(btn => {
-        btn.addEventListener('click', function () {
-            const id = this.dataset.packageId;
-            document.getElementById('package-form-' + id).classList.toggle('d-none');
+    /* ---------------------------------------------------
+     *  TOGGLE PACKAGE PAYMENT FORM
+     * --------------------------------------------------- */
+    document.querySelectorAll(".toggle-form").forEach(btn => {
+        btn.addEventListener("click", () => {
+            const id = btn.dataset.packageId;
+            const form = document.getElementById("package-form-" + id);
+
+            if (form) {
+                form.classList.toggle("d-none");
+            }
         });
     });
 
-    // Handle package payments
-    document.querySelectorAll('.ajax-package-form').forEach(form => {
-        form.addEventListener('submit', async function(e) {
+
+    /* ---------------------------------------------------
+     *  PACKAGE PAYMENT (STK PUSH)
+     * --------------------------------------------------- */
+    document.querySelectorAll(".ajax-package-form").forEach(form => {
+        form.addEventListener("submit", async (e) => {
             e.preventDefault();
 
-            const packageId = this.dataset.packageId;
-            const phone = this.querySelector('input[name="phone"]').value.trim();
-            const statusDiv = document.getElementById('status-' + packageId);
+            const packageId = form.dataset.packageId;
+            const phone = form.querySelector('input[name="phone"]').value.trim();
+            const statusDiv = document.getElementById("status-" + packageId);
 
             if (!phone) {
-                statusDiv.innerHTML = '<span class="text-danger">Please enter your phone number.</span>';
+                statusDiv.innerHTML = `<span class="text-danger">Please enter your phone number.</span>`;
                 return;
             }
 
-            statusDiv.innerHTML = '<span class="text-info">Processing your payment...</span>';
+            statusDiv.innerHTML = `<span class="text-info">Processing your payment…</span>`;
 
             try {
                 const formData = new FormData();
-                formData.append('package_id', packageId);
-                formData.append('phone', phone);
+                formData.append("package_id", packageId);
+                formData.append("phone", phone);
 
-                const response = await fetch('/client/payments/process', {
-                    method: 'POST',
+                const response = await fetch("/client/payments/process", {
+                    method: "POST",
                     body: formData
                 });
 
                 const html = await response.text();
 
-                // Replace card area with waiting screen
-                this.parentElement.innerHTML = html;
+                // Replace form area with waiting screen HTML
+                form.parentElement.innerHTML = html;
+                
+                // After replacing HTML, start polling
+                startPaymentPolling();
 
-                // Start polling for payment/voucher status
-                pollPaymentStatus(statusDiv);
-
-            } catch (err) {
-                console.error(err);
-                statusDiv.innerHTML = '<span class="text-danger">Payment initiation failed.</span>';
+            } catch (error) {
+                console.error(error);
+                statusDiv.innerHTML = `<span class="text-danger">Payment initiation failed. Try again.</span>`;
             }
         });
     });
 
-    // Payment polling
-    function pollPaymentStatus(statusDiv) {
+
+    /* ---------------------------------------------------
+     *  POLLING: PAYMENT STATUS
+     * --------------------------------------------------- */
+    function startPaymentPolling() {
         const timer = setInterval(async () => {
             try {
-                const res = await fetch('/client/payments/checkStatus');
+                const res = await fetch("/client/payments/checkStatus");
                 const data = await res.json();
 
-                if (data.status === 'success') {
+                if (data.status === "success") {
                     clearInterval(timer);
-                    const transactionId = data.transaction_id || 0;
-                    window.location.href = '/client/payments/success/' + transactionId;
-                } else if (data.status === 'unauthorized') {
-                    clearInterval(timer);
-                    statusDiv.innerHTML = '<span class="text-danger">You are not logged in.</span>';
+                    window.location.href = "/client/payments/success/" + (data.transaction_id || 0);
                 }
 
-            } catch (err) {
-                console.error(err);
+                if (data.status === "unauthorized") {
+                    clearInterval(timer);
+                    alert("You are not logged in.");
+                }
+
+            } catch (error) {
+                console.error("Polling error:", error);
             }
         }, 3000);
     }
 
-    // Voucher Redeem AJAX
-    const voucherForm = document.getElementById('voucher-redeem-form');
-    if (voucherForm) {
-        const voucherStatus = document.getElementById('voucher-status');
 
-        voucherForm.addEventListener('submit', async function(e) {
+    /* ---------------------------------------------------
+     *  VOUCHER REDEEM
+     * --------------------------------------------------- */
+    const voucherForm = document.getElementById("voucher-redeem-form");
+    if (voucherForm) {
+        const voucherStatus = document.getElementById("voucher-status");
+
+        voucherForm.addEventListener("submit", async (e) => {
             e.preventDefault();
 
-            const code = document.getElementById('voucher').value.trim();
+            const code = document.getElementById("voucher").value.trim();
             if (!code) {
-                voucherStatus.innerHTML = '<span class="text-danger">Enter a voucher code.</span>';
+                voucherStatus.innerHTML = `<span class="text-danger">Enter a voucher code.</span>`;
                 return;
             }
 
-            voucherStatus.innerHTML = '<span class="text-info">Checking voucher...</span>';
+            voucherStatus.innerHTML = `<span class="text-info">Checking voucher…</span>`;
 
             try {
                 const formData = new FormData();
-                formData.append('voucher_code', code);
+                formData.append("voucher_code", code);
 
-                const res = await fetch('/client/vouchers/redeem-post', {
-                    method: 'POST',
+                const res = await fetch("/client/vouchers/redeem-post", {
+                    method: "POST",
                     body: formData
                 });
 
                 const result = await res.json();
 
-                if (result.status === 'success') {
-                    voucherStatus.innerHTML = '<span class="text-success">' + result.message + '</span>';
-                    setTimeout(() => window.location.href = '/client/subscriptions', 1500);
+                if (result.status === "success") {
+                    voucherStatus.innerHTML = `<span class="text-success">${result.message}</span>`;
+                    setTimeout(() => window.location.href = "/client/subscriptions", 1500);
                 } else {
-                    voucherStatus.innerHTML = '<span class="text-danger">' + result.message + '</span>';
+                    voucherStatus.innerHTML = `<span class="text-danger">${result.message}</span>`;
                 }
 
-            } catch (err) {
-                console.error(err);
-                voucherStatus.innerHTML = '<span class="text-danger">Redeem failed. Try again.</span>';
+            } catch (error) {
+                voucherStatus.innerHTML = `<span class="text-danger">Redeem failed. Try again.</span>`;
+                console.error(error);
             }
         });
     }
 
-    // Reconnect Using M-PESA Code AJAX
-    const reconnectForm = document.getElementById('reconnect-form');
-    if (reconnectForm) {
-        const reconnectStatus = document.getElementById('reconnect-status');
 
-        reconnectForm.addEventListener('submit', async function(e) {
+    /* ---------------------------------------------------
+     *  RECONNECT USING MPESA CODE
+     * --------------------------------------------------- */
+    const reconnectForm = document.getElementById("reconnect-form");
+    if (reconnectForm) {
+        const reconnectStatus = document.getElementById("reconnect-status");
+
+        reconnectForm.addEventListener("submit", async (e) => {
             e.preventDefault();
 
-            const code = reconnectForm.querySelector('input[name="mpesa_code"]').value.trim();
+            const code = reconnectForm.querySelector("input[name='mpesa_code']").value.trim();
+
             if (!code) {
-                reconnectStatus.innerHTML = '<span class="text-danger">Enter your M-PESA code.</span>';
+                reconnectStatus.innerHTML = `<span class="text-danger">Enter your M-PESA code.</span>`;
                 return;
             }
 
-            reconnectStatus.innerHTML = '<span class="text-info">Verifying code...</span>';
+            reconnectStatus.innerHTML = `<span class="text-info">Verifying code…</span>`;
 
             try {
                 const formData = new FormData();
-                formData.append('mpesa_code', code);
+                formData.append("mpesa_code", code);
 
-                // Corrected URL
-                const res = await fetch('/reconnect-mpesa', {
-                    method: 'POST',
+                const res = await fetch("/reconnect-mpesa", {
+                    method: "POST",
                     body: formData
                 });
 
                 const result = await res.json();
 
                 if (result.success) {
-                    reconnectStatus.innerHTML = '<span class="text-success">' + result.message + '</span>';
+                    reconnectStatus.innerHTML = `<span class="text-success">${result.message}</span>`;
                     setTimeout(() => window.location.reload(), 1500);
                 } else {
-                    reconnectStatus.innerHTML = '<span class="text-danger">' + result.message + '</span>';
+                    reconnectStatus.innerHTML = `<span class="text-danger">${result.message}</span>`;
                 }
 
-            } catch (err) {
-                console.error(err);
-                reconnectStatus.innerHTML = '<span class="text-danger">Reconnect failed. Try again.</span>';
+            } catch (error) {
+                reconnectStatus.innerHTML = `<span class="text-danger">Reconnect failed. Try again.</span>`;
+                console.error(error);
             }
         });
     }
