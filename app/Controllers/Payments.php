@@ -45,26 +45,35 @@ class Payments extends BaseController
     {
         $this->checkLogin();
 
-        $payments = $this->paymentModel
+        $perPage = 20; // number of records per page
+        $currentPage = (int) $this->request->getGet('page') ?: 1;
+
+        $builder = $this->paymentModel
             ->select("
-                payments.*,
-                clients.username AS client_username,
-                packages.name AS package_name,
-                mpesa_transactions.mpesa_receipt_number AS mpesa_code
-            ")
+            payments.*,
+            clients.username AS client_username,
+            packages.name AS package_name,
+            mpesa_transactions.mpesa_receipt_number AS mpesa_code
+        ")
             ->join('clients', 'clients.id = payments.client_id', 'left')
             ->join('packages', 'packages.id = payments.package_id', 'left')
             ->join('mpesa_transactions', 'mpesa_transactions.id = payments.mpesa_transaction_id', 'left')
-            ->orderBy('payments.created_at', 'DESC')
-            ->findAll();
+            ->orderBy('payments.created_at', 'DESC');
+
+        $totalPayments = $builder->countAllResults(false);
+
+        $payments = $builder->get($perPage, ($currentPage - 1) * $perPage)->getResultArray();
 
         $clients  = $this->clientModel->orderBy('id', 'DESC')->findAll();
         $packages = $this->packageModel->orderBy('id', 'DESC')->findAll();
 
         return view('admin/payments/index', [
-            'payments'  => $payments,
-            'clients'   => $clients,
-            'packages'  => $packages
+            'payments'       => $payments,
+            'clients'        => $clients,
+            'packages'       => $packages,
+            'perPage'        => $perPage,
+            'currentPage'    => $currentPage,
+            'totalPayments'  => $totalPayments
         ]);
     }
 }
