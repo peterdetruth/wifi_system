@@ -348,7 +348,55 @@ class MpesaService
             }
         }
 
-        if (empty($mpesaReceipt)) $mpesaReceipt = 'UNKNOWN_' . $transaction['id'];
+        if (empty($mpesaReceipt)) {
+            $mpesaReceipt = 'UNKNOWN_' . $transaction['id'];
+        }
+
+        // -----------------------
+        // IDEMPOTENCY CHECKS
+        // -----------------------
+
+        // 1) If payment exists for this mpesa_transaction_id, and subscription already created for that payment,
+        //    assume callback already processed — return success without duplicating.
+        try {
+            $subscriptionModel = new \App\Models\SubscriptionModel();
+
+            $existingPayment = $this->paymentsModel->where('mpesa_transaction_id', $transaction['id'])->first();
+            if ($existingPayment) {
+                $existingSub = $subscriptionModel->where('payment_id', $existingPayment['id'])->first();
+                if ($existingSub) {
+                    $this->logger->info("Callback already processed: subscription exists for payment.", [
+                        'transaction_id' => $transaction['id'],
+                        'payment_id' => $existingPayment['id'],
+                        'subscription_id' => $existingSub['id'] ?? null,
+                    ]);
+
+                    return ['ResultCode' => 0, 'ResultDesc' => 'Callback already processed'];
+                }
+            }
+
+            // 2) If another payment already exists with the same mpesa receipt number, treat as duplicate
+            //    (this helps if the callback was processed for a different transaction earlier).
+            $paymentByReceipt = $this->paymentsModel->where('mpesa_receipt_number', $mpesaReceipt)->first();
+            if ($paymentByReceipt) {
+                // If this payment is tied to the same mpesa_transaction_id then it's okay and will continue,
+                // but if it's a different payment (already processed), skip duplicate processing.
+                if (empty($existingPayment) || ($paymentByReceipt['mpesa_transaction_id'] ?? null) != $transaction['id']) {
+                    $this->logger->info("Callback duplicate detected by receipt — skipping duplicate processing", [
+                        'mpesa_receipt' => $mpesaReceipt,
+                        'existing_payment_id' => $paymentByReceipt['id']
+                    ]);
+                    return ['ResultCode' => 0, 'ResultDesc' => 'Callback already processed'];
+                }
+            }
+        } catch (\Throwable $e) {
+            // If idempotency checks fail unexpectedly, log and continue with processing to avoid losing a real payment.
+            $this->logger->error("Idempotency checks failed, continuing processing", ['exception' => $e->getMessage()]);
+        }
+
+        // -----------------------
+        // Proceed to update transaction and create payment/subscription
+        // -----------------------
 
         try {
             $this->transactionModel->update($transaction['id'], [
@@ -367,6 +415,7 @@ class MpesaService
 
         $this->db->transStart();
         try {
+            // Create or update payment
             $paymentRow = $this->paymentsModel->where('mpesa_transaction_id', $transaction['id'])->first();
             $paymentData = [
                 'mpesa_transaction_id' => $transaction['id'],
@@ -388,16 +437,28 @@ class MpesaService
                 $paymentId = $this->paymentsModel->insert($paymentData, true);
             }
 
-            $subscriptionModel = new \App\Models\SubscriptionModel();
-            $existingSubs = $subscriptionModel->where('client_id', $transaction['client_id'])
+            // Double-check: if a subscription already exists for this payment, skip creating another
+            $existingSubForPayment = $subscriptionModel->where('payment_id', $paymentId)->first();
+            if ($existingSubForPayment) {
+                $this->logger->info("Subscription already exists for this payment (post-insert check)", [
+                    'payment_id' => $paymentId,
+                    'subscription_id' => $existingSubForPayment['id']
+                ]);
+                $this->db->transComplete();
+                return ['ResultCode' => 0, 'ResultDesc' => 'Callback already processed'];
+            }
+
+            // Expire existing active subscriptions for same client + package
+            $activeSubs = $subscriptionModel->where('client_id', $transaction['client_id'])
                 ->where('package_id', $transaction['package_id'])
                 ->where('status', 'active')
                 ->findAll();
 
-            foreach ($existingSubs as $sub) {
+            foreach ($activeSubs as $sub) {
                 $subscriptionModel->update($sub['id'], ['status' => 'expired', 'updated_at' => date('Y-m-d H:i:s')]);
             }
 
+            // Create new subscription
             $startDate = date('Y-m-d H:i:s');
             $package = $this->packageModel->find($transaction['package_id']);
             $expiresOn = $this->calculateSubscriptionExpiry($package, $startDate);
@@ -417,6 +478,7 @@ class MpesaService
                 'package_id' => $transaction['package_id']
             ]);
 
+            // Router provisioning debug/log (no functional change)
             $routerId = $package['router_id'] ?? null;
             $this->logger->debug("Router activation placeholder called", [
                 'subscription_id' => $subId,
@@ -426,6 +488,7 @@ class MpesaService
                 'package_type' => $package['type'] ?? null
             ]);
 
+            // Activate client on router / network
             $activationService = new ActivationService($this->logger);
             $activationService->activate($transaction['client_id'], $transaction['package_id'], (float)$amount);
 
@@ -442,6 +505,7 @@ class MpesaService
 
         return ['ResultCode' => 0, 'ResultDesc' => 'Callback processed successfully'];
     }
+
 
     private function safeInsertTransaction(?string $merchantRequestId, ?string $checkoutRequestId): ?array
     {
@@ -514,5 +578,4 @@ class MpesaService
 
         return ['ResultCode' => 0, 'ResultDesc' => 'Acknowledged failure'];
     }
-
 }
