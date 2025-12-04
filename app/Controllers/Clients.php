@@ -107,19 +107,34 @@ class Clients extends BaseController
      */
     public function store()
     {
-        try {
-            $data = $this->request->getPost();
+        $this->ensureLogin();
 
-            if ($this->clientModel->save($data)) {
-                return redirect()->to('/admin/clients')->with('success', 'Client created successfully.');
+        // Get POST data
+        $data = $this->request->getPost();
+
+        // Ensure required fields exist
+        if (empty($data['username']) || empty($data['full_name']) || empty($data['password'])) {
+            return redirect()->back()->withInput()->with('error', 'Username, Full Name, and Password are required.');
+        }
+
+        // Set defaults if not provided
+        $data['status'] = $data['status'] ?? 'active';
+        $data['account_type'] = $data['account_type'] ?? 'personal';
+
+        try {
+            // Validate and save using ClientModel
+            if (! $this->clientModel->save($data)) {
+                // Collect model errors (validation or DB)
+                $errors = $this->clientModel->errors();
+                return redirect()->back()->withInput()->with('error', implode('<br>', $errors));
             }
 
-            $dbError = $this->clientModel->errors() ?: Database::connect()->error();
-            return redirect()->back()->withInput()->with('error', 'Failed to create client: ' . print_r($dbError, true));
+            return redirect()->to('/admin/clients')->with('success', 'Client created successfully.');
         } catch (\Exception $e) {
-            return redirect()->back()->withInput()->with('error', 'Error: ' . $e->getMessage());
+            return redirect()->back()->withInput()->with('error', 'Error creating client: ' . $e->getMessage());
         }
     }
+
 
     /**
      * Edit client
