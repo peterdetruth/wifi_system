@@ -1,22 +1,41 @@
 body {
-  font-family: 'Segoe UI', sans-serif;
+  font-family: "Segoe UI", sans-serif;
   background-color: #f8f9fa;
+  margin: 0;
+  padding: 0;
+  overflow-x: hidden; /* prevent horizontal scroll */
 }
 
-#wrapper {
-  display: flex;
-  height: 100vh;
-}
-
+/* Sidebar */
 #sidebar-wrapper {
+  position: fixed;
+  top: 0;
+  left: 0;
+  height: 100vh;
   width: 250px;
+  overflow-y: auto;
+  z-index: 1000;
+  background-color: #212529; /* match bg-dark */
   transition: all 0.3s;
 }
 
+/* Collapse sidebar */
 #wrapper.toggled #sidebar-wrapper {
   margin-left: -250px;
 }
 
+/* Page content */
+#page-content-wrapper {
+  margin-left: 250px; /* leave space for sidebar */
+  transition: margin-left 0.3s;
+}
+
+/* Adjust page content when sidebar is collapsed */
+#wrapper.toggled #page-content-wrapper {
+  margin-left: 0;
+}
+
+/* Sidebar links */
 .list-group-item {
   border: none;
   transition: background-color 0.2s;
@@ -26,11 +45,7 @@ body {
   background-color: #495057;
 }
 
-#page-content-wrapper {
-  overflow-y: auto;
-  flex-grow: 1;
-}
-
+/* Forms */
 form {
   margin: 0 0 3rem 0;
 }

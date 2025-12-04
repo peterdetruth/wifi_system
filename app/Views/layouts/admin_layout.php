@@ -61,13 +61,7 @@
         </a>
 
         <!-- SUBSCRIBERS -->
-        <div class="menu-section text-secondary">Subscribers</div>
-        <a href="<?= base_url('admin/subscribers/active') ?>" class="list-group-item bg-dark text-white">
-          <i class="bi bi-wifi me-2"></i> Active
-        </a>
-        <a href="<?= base_url('admin/subscribers/expired') ?>" class="list-group-item bg-dark text-white">
-          <i class="bi bi-person-x me-2"></i> Expired
-        </a>
+        <div class="menu-section text-secondary">Features</div>
         <a href="<?= base_url('admin/features') ?>" class="list-group-item bg-dark text-white">
           <i class="bi bi-list-check me-2"></i> Features
         </a>
