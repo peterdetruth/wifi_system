@@ -39,6 +39,11 @@ class Transactions extends BaseController
     {
         $this->checkLogin();
 
+        $perPage = 20;
+        $currentPage = (int) $this->request->getGet('transactions_page') ?: 1;
+        $isAjax = $this->request->isAJAX();
+
+        // Filters
         $clientId  = $this->request->getGet('client_id');
         $packageId = $this->request->getGet('package_id');
         $dateFrom  = $this->request->getGet('date_from');
@@ -54,39 +59,28 @@ class Transactions extends BaseController
             ->join('clients', 'clients.id = mpesa_transactions.client_id', 'left');
 
         // Apply filters
-        if (!empty($clientId)) {
-            $builder->where('mpesa_transactions.client_id', $clientId);
-        }
-
-        if (!empty($packageId)) {
-            $builder->where('mpesa_transactions.package_id', $packageId);
-        }
-
-        if (!empty($dateFrom)) {
-            $builder->where('DATE(mpesa_transactions.created_at) >=', $dateFrom);
-        }
-
-        if (!empty($dateTo)) {
-            $builder->where('DATE(mpesa_transactions.created_at) <=', $dateTo);
-        }
+        if (!empty($clientId)) $builder->where('mpesa_transactions.client_id', $clientId);
+        if (!empty($packageId)) $builder->where('mpesa_transactions.package_id', $packageId);
+        if (!empty($dateFrom)) $builder->where('DATE(mpesa_transactions.created_at) >=', $dateFrom);
+        if (!empty($dateTo)) $builder->where('DATE(mpesa_transactions.created_at) <=', $dateTo);
 
         $builder->orderBy('mpesa_transactions.created_at', 'DESC');
 
-        // Pagination setup
-        $perPage = 10;
-        $page = (int) ($this->request->getVar('page') ?? 1);
-
-        $totalTransactions = $builder->countAllResults(false); // do not reset query
-        $transactions = $builder->get($perPage, ($page - 1) * $perPage)->getResultArray();
+        $totalTransactions = $builder->countAllResults(false);
+        $transactions = $builder->get($perPage, ($currentPage - 1) * $perPage)->getResultArray();
 
         $data = [
             'transactions' => $transactions,
-            'clients'      => $this->clientModel->orderBy('id', 'DESC')->findAll(),
-            'packages'     => $this->packageModel->orderBy('id', 'DESC')->findAll(),
-            'perPage'      => $perPage,
-            'currentPage'  => $page,
+            'clients' => $this->clientModel->orderBy('id', 'DESC')->findAll(),
+            'packages' => $this->packageModel->orderBy('id', 'DESC')->findAll(),
+            'perPage' => $perPage,
+            'currentPage' => $currentPage,
             'totalTransactions' => $totalTransactions
         ];
+
+        if ($isAjax) {
+            return view('admin/transactions/partials/transactions_table', $data);
+        }
 
         return view('admin/transactions/index', $data);
     }

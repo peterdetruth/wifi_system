@@ -45,8 +45,9 @@ class Payments extends BaseController
     {
         $this->checkLogin();
 
-        $perPage = 20; // number of records per page
-        $currentPage = (int) $this->request->getGet('page') ?: 1;
+        $perPage = 20;
+        $currentPage = (int) $this->request->getGet('payments_page') ?: 1;
+        $isAjax = $this->request->isAJAX();
 
         $builder = $this->paymentModel
             ->select("
@@ -61,19 +62,21 @@ class Payments extends BaseController
             ->orderBy('payments.created_at', 'DESC');
 
         $totalPayments = $builder->countAllResults(false);
-
         $payments = $builder->get($perPage, ($currentPage - 1) * $perPage)->getResultArray();
 
-        $clients  = $this->clientModel->orderBy('id', 'DESC')->findAll();
-        $packages = $this->packageModel->orderBy('id', 'DESC')->findAll();
+        $data = [
+            'payments' => $payments,
+            'clients' => $this->clientModel->orderBy('id', 'DESC')->findAll(),
+            'packages' => $this->packageModel->orderBy('id', 'DESC')->findAll(),
+            'perPage' => $perPage,
+            'currentPage' => $currentPage,
+            'totalPayments' => $totalPayments
+        ];
 
-        return view('admin/payments/index', [
-            'payments'       => $payments,
-            'clients'        => $clients,
-            'packages'       => $packages,
-            'perPage'        => $perPage,
-            'currentPage'    => $currentPage,
-            'totalPayments'  => $totalPayments
-        ]);
+        if ($isAjax) {
+            return view('admin/payments/partials/payments_table', $data);
+        }
+
+        return view('admin/payments/index', $data);
     }
 }
