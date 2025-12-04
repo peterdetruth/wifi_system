@@ -109,33 +109,70 @@ class Clients extends BaseController
     {
         $this->ensureLogin();
 
-        // Get POST data
-        $data = $this->request->getPost();
+        $post = $this->request->getPost();
 
-        // Ensure required fields exist
-        if (empty($data['username']) || empty($data['full_name']) || empty($data['password'])) {
-            return redirect()->back()->withInput()->with('error', 'Username, Full Name, and Password are required.');
+        // Prepare data
+        $data = [
+            'full_name' => $post['full_name'] ?? '',
+            'username' => $post['username'] ?? '',
+            'email' => $post['email'] ?? null,
+            'phone' => $post['phone'] ?? null,
+            'status' => $post['status'] ?? 'active',
+            'account_type' => $post['account_type'] ?? 'personal',
+            'default_package_id' => $post['default_package_id'] ?? null,
+            'created_at' => date('Y-m-d H:i:s'),
+            'updated_at' => date('Y-m-d H:i:s')
+        ];
+
+        // Password is required
+        if (empty($post['password'])) {
+            return redirect()->back()->withInput()->with('error', 'Password is required.');
         }
 
-        // Set defaults if not provided
-        $data['status'] = $data['status'] ?? 'active';
-        $data['account_type'] = $data['account_type'] ?? 'personal';
+        $data['password'] = password_hash($post['password'], PASSWORD_DEFAULT);
+
+        $errors = [];
+
+        // Validate full_name
+        if (strlen($data['full_name']) < 3) $errors[] = 'Full name must be at least 3 characters.';
+
+        // Validate username
+        if (empty($data['username']) || !preg_match('/^[a-zA-Z0-9]+$/', $data['username']) || strlen($data['username']) < 3) {
+            $errors[] = 'Username must be alphanumeric and at least 3 characters.';
+        } else {
+            // Check uniqueness
+            $existing = $this->clientModel->where('username', $data['username'])->first();
+            if ($existing) $errors[] = 'Username already exists.';
+        }
+
+        // Validate email if provided
+        if (!empty($data['email']) && !filter_var($data['email'], FILTER_VALIDATE_EMAIL)) {
+            $errors[] = 'Invalid email address.';
+        } elseif (!empty($data['email'])) {
+            $existing = $this->clientModel->where('email', $data['email'])->first();
+            if ($existing) $errors[] = 'Email already exists.';
+        }
+
+        // Validate status
+        if (!in_array($data['status'], ['active', 'inactive'])) $errors[] = 'Invalid status.';
+
+        // Validate account_type
+        if (!in_array($data['account_type'], ['personal', 'business'])) $errors[] = 'Invalid account type.';
+
+        if (!empty($errors)) {
+            return redirect()->back()->withInput()->with('error', implode('<br>', $errors));
+        }
 
         try {
-            // Validate and save using ClientModel
-            if (! $this->clientModel->save($data)) {
-                // Collect model errors (validation or DB)
-                $errors = $this->clientModel->errors();
-                return redirect()->back()->withInput()->with('error', implode('<br>', $errors));
-            }
+            // Insert using query builder to ensure execution
+            $db = \Config\Database::connect();
+            $db->table('clients')->insert($data);
 
             return redirect()->to('/admin/clients')->with('success', 'Client created successfully.');
         } catch (\Exception $e) {
             return redirect()->back()->withInput()->with('error', 'Error creating client: ' . $e->getMessage());
         }
     }
-
-
     /**
      * Edit client
      */
@@ -156,17 +193,62 @@ class Clients extends BaseController
      */
     public function update($id)
     {
+        $this->ensureLogin();
+
+        $client = $this->clientModel->find($id);
+        if (!$client) {
+            return redirect()->to('/admin/clients')->with('error', 'Client not found.');
+        }
+
+        $post = $this->request->getPost();
+
+        $data = [
+            'full_name' => $post['full_name'] ?? $client['full_name'],
+            'username' => $post['username'] ?? $client['username'],
+            'email' => $post['email'] ?? $client['email'],
+            'phone' => $post['phone'] ?? $client['phone'],
+            'status' => $post['status'] ?? $client['status'],
+            'account_type' => $post['account_type'] ?? $client['account_type'],
+            'default_package_id' => $post['default_package_id'] ?? $client['default_package_id'],
+            'updated_at' => date('Y-m-d H:i:s') // force CI4 to detect change
+        ];
+
+        // Hash password if provided
+        if (!empty($post['password'])) {
+            $data['password'] = password_hash($post['password'], PASSWORD_DEFAULT);
+        }
+
+        $errors = [];
+
+        // Validate fields
+        if (strlen($data['full_name']) < 3) $errors[] = 'Full name must be at least 3 characters.';
+        if (!in_array($data['status'], ['active', 'inactive'])) $errors[] = 'Invalid status.';
+        if (!in_array($data['account_type'], ['personal', 'business'])) $errors[] = 'Invalid account type.';
+
+        // Username uniqueness
+        if ($data['username'] !== $client['username']) {
+            $existing = $this->clientModel->where('username', $data['username'])->first();
+            if ($existing) $errors[] = 'Username already exists.';
+        }
+
+        // Email uniqueness
+        if ($data['email'] !== $client['email'] && !empty($data['email'])) {
+            $existing = $this->clientModel->where('email', $data['email'])->first();
+            if ($existing) $errors[] = 'Email already exists.';
+        }
+
+        if (!empty($errors)) {
+            return redirect()->back()->withInput()->with('error', implode('<br>', $errors));
+        }
+
         try {
-            $data = $this->request->getPost();
+            // Force update using query builder
+            $db = \Config\Database::connect();
+            $db->table('clients')->where('id', $id)->update($data);
 
-            if ($this->clientModel->update($id, $data)) {
-                return redirect()->to('/admin/clients')->with('success', 'Client updated successfully.');
-            }
-
-            $dbError = $this->clientModel->errors() ?: Database::connect()->error();
-            return redirect()->back()->withInput()->with('error', 'Failed to update client: ' . print_r($dbError, true));
+            return redirect()->to('/admin/clients')->with('success', 'Client updated successfully.');
         } catch (\Exception $e) {
-            return redirect()->back()->withInput()->with('error', 'Error: ' . $e->getMessage());
+            return redirect()->back()->withInput()->with('error', 'Error updating client: ' . $e->getMessage());
         }
     }
 

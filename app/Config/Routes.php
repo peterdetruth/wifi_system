@@ -51,7 +51,7 @@ $routes->group('admin', ['filter' => 'auth', 'namespace' => 'App\Controllers'], 
         $routes->get('view/(:num)', 'Clients::view/$1');
         $routes->get('edit/(:num)', 'Clients::edit/$1');
         $routes->post('update/(:num)', 'Clients::update/$1');
-        $routes->post('delete/(:num)', 'Clients::delete/$1');
+        $routes->get('delete/(:num)', 'Clients::delete/$1');
         // ✅ New route for account recharge (admin only)
         $routes->post('recharge/(:num)', 'Clients::recharge/$1');
     });
