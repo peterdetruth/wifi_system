@@ -30,7 +30,7 @@
                             </tr>
                         </thead>
                         <tbody>
-                            <?php $i = 1; foreach ($transactions as $tx): 
+                            <?php $i = 1 + ($currentPage - 1) * $perPage; foreach ($transactions as $tx): 
                                 $rowClass = 'table-light';
                                 $status = strtolower($tx['status'] ?? 'pending');
                                 if ($status === 'success') $rowClass = 'table-success';
@@ -76,6 +76,22 @@
                             <?php endforeach; ?>
                         </tbody>
                     </table>
+
+                    <!-- Pagination -->
+                    <?php if ($totalTransactions > $perPage): ?>
+                    <nav>
+                        <ul class="pagination justify-content-center mt-3">
+                            <?php
+                            $totalPages = ceil($totalTransactions / $perPage);
+                            for ($i = 1; $i <= $totalPages; $i++): ?>
+                                <li class="page-item <?= $i == $currentPage ? 'active' : '' ?>">
+                                    <a href="<?= current_url() ?>?<?= http_build_query(array_merge($_GET, ['page' => $i])) ?>" class="page-link"><?= $i ?></a>
+                                </li>
+                            <?php endfor; ?>
+                        </ul>
+                    </nav>
+                    <?php endif; ?>
+
                     <!-- Transaction Modal -->
                     <div class="modal fade" id="receiptModal" tabindex="-1" aria-labelledby="receiptLabel" aria-hidden="true">
                       <div class="modal-dialog modal-dialog-centered">
@@ -90,6 +106,7 @@
                         </div>
                       </div>
                     </div>
+
                 </div>
             </div>
         </div>

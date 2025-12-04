@@ -39,7 +39,6 @@ class Transactions extends BaseController
     {
         $this->checkLogin();
 
-        // Filters
         $clientId  = $this->request->getGet('client_id');
         $packageId = $this->request->getGet('package_id');
         $dateFrom  = $this->request->getGet('date_from');
@@ -47,10 +46,10 @@ class Transactions extends BaseController
 
         $builder = $this->mpesaTransactionModel
             ->select('
-                mpesa_transactions.*,
-                packages.name AS package_name,
-                clients.username AS client_username
-            ')
+            mpesa_transactions.*,
+            packages.name AS package_name,
+            clients.username AS client_username
+        ')
             ->join('packages', 'packages.id = mpesa_transactions.package_id', 'left')
             ->join('clients', 'clients.id = mpesa_transactions.client_id', 'left');
 
@@ -73,9 +72,21 @@ class Transactions extends BaseController
 
         $builder->orderBy('mpesa_transactions.created_at', 'DESC');
 
-        $data['transactions'] = $builder->findAll();
-        $data['clients']      = $this->clientModel->orderBy('id', 'DESC')->findAll();
-        $data['packages']     = $this->packageModel->orderBy('id', 'DESC')->findAll();
+        // Pagination setup
+        $perPage = 10;
+        $page = (int) ($this->request->getVar('page') ?? 1);
+
+        $totalTransactions = $builder->countAllResults(false); // do not reset query
+        $transactions = $builder->get($perPage, ($page - 1) * $perPage)->getResultArray();
+
+        $data = [
+            'transactions' => $transactions,
+            'clients'      => $this->clientModel->orderBy('id', 'DESC')->findAll(),
+            'packages'     => $this->packageModel->orderBy('id', 'DESC')->findAll(),
+            'perPage'      => $perPage,
+            'currentPage'  => $page,
+            'totalTransactions' => $totalTransactions
+        ];
 
         return view('admin/transactions/index', $data);
     }
@@ -169,7 +180,6 @@ class Transactions extends BaseController
                 ->back()
                 ->withInput()
                 ->with('error', 'Failed to create transaction: ' . print_r($dbError, true));
-
         } catch (\Exception $e) {
             return redirect()
                 ->back()
@@ -198,7 +208,6 @@ class Transactions extends BaseController
                 ->back()
                 ->withInput()
                 ->with('error', 'Failed to update transaction: ' . print_r($dbError, true));
-
         } catch (\Exception $e) {
             return redirect()
                 ->back()
@@ -223,7 +232,6 @@ class Transactions extends BaseController
             return redirect()
                 ->to('/admin/transactions')
                 ->with('error', 'Failed to delete transaction: ' . print_r($dbError, true));
-
         } catch (\Exception $e) {
             return redirect()
                 ->to('/admin/transactions')
