@@ -16,17 +16,16 @@ use App\Libraries\RouterSync;
 
 class Payments extends BaseController
 {
-    protected $packageModel;
-    protected $subscriptionModel;
-    protected $transactionModel;
-    protected $mpesaTransactionModel;
-    protected $voucherModel;
-    protected $clientModel;
+    protected PackageModel $packageModel;
+    protected SubscriptionModel $subscriptionModel;
+    protected TransactionModel $transactionModel;
+    protected MpesaTransactionModel $mpesaTransactionModel;
+    protected VoucherModel $voucherModel;
+    protected ClientModel $clientModel;
 
-    protected $mpesaLogger;
-    protected $activationService;
-    protected $mpesaService;
-
+    protected MpesaLogger $mpesaLogger;
+    protected ActivationService $activationService;
+    protected MpesaService $mpesaService;
     protected RouterSync $routerSync;
 
     public function __construct()
@@ -44,7 +43,6 @@ class Payments extends BaseController
         $this->activationService = new ActivationService($this->mpesaLogger);
         $this->mpesaService = new MpesaService($this->mpesaLogger);
 
-        // Library handles router provisioning
         $this->routerSync = new RouterSync();
     }
 
@@ -92,23 +90,12 @@ class Payments extends BaseController
             }
 
             try {
-                $activated = $this->activationService->activate($clientId, $packageId, 0);
-                if (!$activated) throw new \Exception("ActivationService failed.");
-
+                $subData = $this->createSubscription($clientId, $packageId, 0);
                 $this->voucherModel->markAsUsed($voucherCode, $clientId);
 
                 mpesa_debug("✅ Voucher successfully redeemed for {$clientUsername}.");
 
-                // Provision router automatically
-                try {
-                    $syncResult = $this->routerSync->addUserToRouter($client, $package);
-                } catch (\Throwable $e) {
-                    log_message('error', 'Router sync failed: ' . $e->getMessage());
-                    $syncResult = [
-                        'success' => false,
-                        'message' => 'Router provisioning failed. Please contact support.'
-                    ];
-                }
+                $syncResult = $this->provisionRouter($client, $package);
 
                 return view('client/payments/success', [
                     'transaction' => ['id' => 0, 'voucher' => $voucherCode],
@@ -145,8 +132,6 @@ class Payments extends BaseController
             }
 
             mpesa_debug("✅ M-PESA transaction initiated — checkoutRequestId: {$checkoutRequestId}");
-
-            // Redirect to waiting page for polling
             return redirect()->to('/client/payments/waiting/' . $checkoutRequestId);
         } catch (\Throwable $e) {
             mpesa_debug("❌ Error initiating payment: " . $e->getMessage());
@@ -156,21 +141,13 @@ class Payments extends BaseController
 
     public function waiting($checkoutRequestId = null)
     {
-        if (!$checkoutRequestId) {
-            return redirect()->to('/client/dashboard')->with('error', 'Invalid transaction reference.');
-        }
+        if (!$checkoutRequestId) return redirect()->to('/client/dashboard')->with('error', 'Invalid transaction reference.');
 
         $clientId = session()->get('client_id');
-        if (!$clientId) {
-            return redirect()->to('/client/login')->with('error', 'Please login.');
-        }
+        if (!$clientId) return redirect()->to('/client/login')->with('error', 'Please login.');
 
-        // Find client to display phone
         $client = $this->clientModel->find($clientId);
-        $mpesaTx = $this->mpesaTransactionModel
-            ->where('checkout_request_id', $checkoutRequestId)
-            ->first();
-
+        $mpesaTx = $this->mpesaTransactionModel->where('checkout_request_id', $checkoutRequestId)->first();
         $phone = $mpesaTx['phone'] ?? $client['phone'] ?? '';
 
         return view('client/payments/waiting', [
@@ -179,82 +156,40 @@ class Payments extends BaseController
         ]);
     }
 
-    /**
-     * Payment success page
-     */
-    public function success($checkoutRequestID = null)
+    public function success($checkoutRequestId = null)
     {
         $clientId = session()->get('client_id');
-        if (!$clientId) {
-            return redirect()->to('/client/login')->with('error', 'Please login.');
-        }
+        if (!$clientId) return redirect()->to('/client/login')->with('error', 'Please login.');
 
-        $mpesaTx = null;
-        $subscription = null;
+        $mpesaTx = $checkoutRequestId
+            ? $this->mpesaTransactionModel->where('checkout_request_id', $checkoutRequestId)->first()
+            : null;
 
-        // --- 1️⃣ Try to find M-PESA transaction if ID provided ---
-        if ($checkoutRequestID) {
-            $mpesaTx = $this->mpesaTransactionModel
-                ->where('checkout_request_id', $checkoutRequestID)
-                ->first();
-        }
-
-        // --- 2️⃣ Find the latest subscription for this client ---
-        $subscription = $this->subscriptionModel
-            ->where('client_id', $clientId)
-            ->orderBy('id', 'DESC')
-            ->first();
-
-        if (!$subscription) {
-            return redirect()->to('/client/dashboard')->with('error', 'Subscription not found.');
-        }
+        $subscription = $this->subscriptionModel->where('client_id', $clientId)->orderBy('id', 'DESC')->first();
+        if (!$subscription) return redirect()->to('/client/dashboard')->with('error', 'Subscription not found.');
 
         $package = $this->packageModel->find($subscription['package_id']);
         $client = $this->clientModel->find($clientId);
+        $syncResult = $this->provisionRouter($client, $package);
 
-        // --- 3️⃣ Router provisioning ---
-        try {
-            $syncResult = $this->routerSync->addUserToRouter($client, $package);
-        } catch (\Throwable $e) {
-            log_message('error', 'Router sync failed: ' . $e->getMessage());
-            $syncResult = [
-                'success' => false,
-                'message' => 'Router provisioning failed. Please contact support.'
-            ];
-        }
-
-        // --- 4️⃣ Prepare data for view ---
-        $data = [
+        return view('client/payments/success', [
             'mpesaTx' => $mpesaTx,
             'subscription' => $subscription,
             'client' => $client,
             'package' => $package,
             'router_sync' => $syncResult
-        ];
-
-        return view('client/payments/success', $data);
+        ]);
     }
-
-
 
     public function checkStatus()
     {
         $clientId = session()->get('client_id');
         if (!$clientId) return $this->response->setJSON(['status' => 'unauthorized']);
 
-        $mpesaTx = $this->mpesaTransactionModel
-            ->where('client_id', $clientId)
-            ->orderBy('id', 'DESC')
-            ->first();
-
+        $mpesaTx = $this->mpesaTransactionModel->where('client_id', $clientId)->orderBy('id', 'DESC')->first();
         if (!$mpesaTx) return $this->response->setJSON(['status' => 'pending']);
-
         if (strtolower($mpesaTx['status']) === 'success') {
-            $transaction = $this->transactionModel
-                ->where('client_id', $clientId)
-                ->orderBy('id', 'DESC')
-                ->first();
-
+            $transaction = $this->transactionModel->where('client_id', $clientId)->orderBy('id', 'DESC')->first();
             return $this->response->setJSON([
                 'status' => 'success',
                 'transaction_id' => $transaction['id'] ?? 0
@@ -264,14 +199,52 @@ class Payments extends BaseController
         return $this->response->setJSON(['status' => 'pending']);
     }
 
-    public function status($checkoutRequestID)
+    public function status($checkoutRequestId)
     {
-        $transaction = $this->mpesaTransactionModel
-            ->where('checkout_request_id', $checkoutRequestID)
-            ->first();
+        $transaction = $this->mpesaTransactionModel->where('checkout_request_id', $checkoutRequestId)->first();
+        return $this->response->setJSON(['status' => $transaction['status'] ?? 'NotFound']);
+    }
 
-        if (!$transaction) return $this->response->setJSON(['status' => 'NotFound']);
+    public function reconnectUsingMpesaCode(string $mpesaCode, int $clientId)
+    {
+        return $this->mpesaService->reconnectUsingMpesaCode($mpesaCode, $clientId);
+    }
 
-        return $this->response->setJSON(['status' => $transaction['status']]);
+    // ====================== PRIVATE HELPERS ======================
+
+    private function createSubscription(int $clientId, int $packageId, int $paymentId = 0, ?string $startDate = null)
+    {
+        $startDate = $startDate ?? date('Y-m-d H:i:s');
+        $package = $this->packageModel->find($packageId);
+        $expiresOn = $this->mpesaService->getExpiry($package, $startDate);
+
+        // Expire old subscriptions
+        $this->subscriptionModel->where('client_id', $clientId)
+            ->where('package_id', $packageId)
+            ->where('status', 'active')
+            ->set(['status' => 'expired', 'updated_at' => date('Y-m-d H:i:s')])
+            ->update();
+
+        return $this->subscriptionModel->insert([
+            'client_id' => $clientId,
+            'package_id' => $packageId,
+            'payment_id' => $paymentId ?: null,
+            'start_date' => $startDate,
+            'expires_on' => $expiresOn,
+            'status' => 'active'
+        ], true);
+    }
+
+    private function provisionRouter(array $client, array $package): array
+    {
+        try {
+            return $this->routerSync->addUserToRouter($client, $package);
+        } catch (\Throwable $e) {
+            log_message('error', 'Router sync failed: ' . $e->getMessage());
+            return [
+                'success' => false,
+                'message' => 'Router provisioning failed. Please contact support.'
+            ];
+        }
     }
 }
