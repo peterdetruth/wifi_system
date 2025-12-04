@@ -355,9 +355,6 @@ class Clients extends BaseController
             'db' => $db // pass db for packages dropdown in recharge form
         ]);
     }
-
-
-
     /**
      * Recharge a client's account (admin only)
      */
@@ -400,8 +397,26 @@ class Clients extends BaseController
             'updated_at'  => date('Y-m-d H:i:s')
         ];
 
-        $db->table('subscriptions')->insert($subscriptionData);
+        try {
+            $db->transStart(); // start transaction
 
-        return redirect()->back()->with('success', 'Client account recharged successfully.');
+            // Insert subscription
+            $db->table('subscriptions')->insert($subscriptionData);
+
+            // Insert recharge log (copy subscription data except status)
+            $rechargeData = $subscriptionData;
+            unset($rechargeData['status']);
+            $db->table('client_recharges')->insert($rechargeData);
+
+            $db->transComplete(); // commit transaction
+
+            if ($db->transStatus() === false) {
+                throw new \Exception("Transaction failed. Recharge was not saved.");
+            }
+
+            return redirect()->back()->with('success', 'Client account recharged successfully.');
+        } catch (\Exception $e) {
+            return redirect()->back()->with('error', 'Error during recharge: ' . $e->getMessage());
+        }
     }
 }
