@@ -67,6 +67,20 @@
     </form>
 </div>
 
+<!-- Recharges Table -->
+<div class="mb-4">
+    <h5>Recharges History</h5>
+    <div id="rechargesTable">
+        <?= view('admin/clients/partials/recharges_table', [
+            'recharges' => $recharges,
+            'rechargesTotal' => $rechargesTotal,
+            'rechargesPage' => $rechargesPage,
+            'perPage' => $perPage
+        ]) ?>
+    </div>
+</div>
+
+
 
 <!-- CSS & Countdown -->
 <style>
@@ -92,70 +106,91 @@
 
 <!-- JS -->
 <script>
-    document.addEventListener('DOMContentLoaded', function() {
+document.addEventListener('DOMContentLoaded', function() {
 
-        function updateCountdowns() {
-            document.querySelectorAll('.countdown').forEach(function(el) {
-                let expiry = new Date(el.dataset.expiry);
-                let now = new Date();
-                let diff = expiry - now;
-                if (diff <= 0) {
-                    el.textContent = 'Expired';
-                } else {
-                    let days = Math.floor(diff / (1000 * 60 * 60 * 24));
-                    let hours = Math.floor((diff / (1000 * 60 * 60)) % 24);
-                    let mins = Math.floor((diff / (1000 * 60)) % 60);
-                    let secs = Math.floor((diff / 1000) % 60);
-                    el.textContent = days + 'd ' + hours + 'h ' + mins + 'm ' + secs + 's';
-                }
-            });
-        }
-        setInterval(updateCountdowns, 1000);
-        updateCountdowns();
+    // Countdown updater (for subscriptions & recharges)
+    function updateCountdowns() {
+        document.querySelectorAll('.countdown').forEach(function(el) {
+            let expiry = new Date(el.dataset.expiry);
+            let now = new Date();
+            let diff = expiry - now;
 
-        // AJAX table reload
-        function loadTable(tableType, page, status) {
-            const url = '<?= base_url("/admin/clients/view/" . $client["id"]) ?>';
-            fetch(`${url}?table=${tableType}&${tableType}_page=${page}&${tableType}_status=${status}`, {
-                    headers: {
-                        'X-Requested-With': 'XMLHttpRequest'
-                    }
-                })
-                .then(res => res.text())
-                .then(html => {
-                    if (tableType === 'subscriptions') {
-                        document.getElementById('subscriptionsTable').innerHTML = html;
-                    } else {
-                        document.getElementById('mpesaTable').innerHTML = html;
-                    }
-                });
-        }
-
-        // Pagination click
-        document.addEventListener('click', function(e) {
-            if (e.target.closest('#subscriptionsPagination a')) {
-                e.preventDefault();
-                const page = e.target.dataset.page;
-                const status = document.getElementById('subscriptionsStatus').value;
-                loadTable('subscriptions', page, status);
-            }
-            if (e.target.closest('#mpesaPagination a')) {
-                e.preventDefault();
-                const page = e.target.dataset.page;
-                const status = document.getElementById('mpesaStatus').value;
-                loadTable('mpesa', page, status);
+            if (diff <= 0) {
+                el.textContent = 'Expired';
+                el.closest('tr').classList.add('expired-row'); // highlight row
+            } else {
+                let days = Math.floor(diff / (1000 * 60 * 60 * 24));
+                let hours = Math.floor((diff / (1000 * 60 * 60)) % 24);
+                let mins = Math.floor((diff / (1000 * 60)) % 60);
+                let secs = Math.floor((diff / 1000) % 60);
+                el.textContent = days + 'd ' + hours + 'h ' + mins + 'm ' + secs + 's';
+                el.closest('tr').classList.remove('expired-row'); // remove highlight if not expired
             }
         });
+    }
+    setInterval(updateCountdowns, 1000);
+    updateCountdowns();
 
-        // Status filter change
-        document.getElementById('subscriptionsStatus').addEventListener('change', function() {
-            loadTable('subscriptions', 1, this.value);
+    // AJAX table reload for subscriptions, mpesa, and recharges
+    function loadTable(tableType, page, status) {
+        const url = '<?= base_url("/admin/clients/view/" . $client["id"]) ?>';
+        fetch(`${url}?table=${tableType}&${tableType}_page=${page}&${tableType}_status=${status || ''}`, {
+            headers: {
+                'X-Requested-With': 'XMLHttpRequest'
+            }
+        })
+        .then(res => res.text())
+        .then(html => {
+            if (tableType === 'subscriptions') {
+                document.getElementById('subscriptionsTable').innerHTML = html;
+            } else if (tableType === 'mpesa') {
+                document.getElementById('mpesaTable').innerHTML = html;
+            } else if (tableType === 'recharges') {
+                document.getElementById('rechargesTable').innerHTML = html;
+            }
         });
-        document.getElementById('mpesaStatus').addEventListener('change', function() {
-            loadTable('mpesa', 1, this.value);
-        });
+    }
 
+    // Pagination click handler
+    document.addEventListener('click', function(e) {
+        if (e.target.closest('#subscriptionsPagination a')) {
+            e.preventDefault();
+            const page = e.target.dataset.page;
+            const status = document.getElementById('subscriptionsStatus').value;
+            loadTable('subscriptions', page, status);
+        }
+        if (e.target.closest('#mpesaPagination a')) {
+            e.preventDefault();
+            const page = e.target.dataset.page;
+            const status = document.getElementById('mpesaStatus').value;
+            loadTable('mpesa', page, status);
+        }
+        if (e.target.closest('#rechargesPagination a')) {
+            e.preventDefault();
+            const page = e.target.dataset.page;
+            loadTable('recharges', page, '');
+        }
     });
+
+    // Status filter change handler
+    document.getElementById('subscriptionsStatus').addEventListener('change', function() {
+        loadTable('subscriptions', 1, this.value);
+    });
+    document.getElementById('mpesaStatus').addEventListener('change', function() {
+        loadTable('mpesa', 1, this.value);
+    });
+
+});
 </script>
+
+<style>
+/* Highlight expired rows */
+.expired-row {
+    background-color: #f8d7da !important; /* light red */
+    color: #721c24;
+}
+</style>
+
+
 
 <?= $this->endSection() ?>

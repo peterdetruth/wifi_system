@@ -283,7 +283,6 @@ class Clients extends BaseController
 
         $db = \Config\Database::connect();
         $perPage = 5;
-
         $isAjax = $this->request->isAJAX();
 
         // --- Subscriptions ---
@@ -321,9 +320,21 @@ class Clients extends BaseController
         $totalMpesa = $mpesaBuilder->countAllResults(false);
         $mpesaTransactions = $mpesaBuilder->get($perPage, max(0, ($mpesaPage - 1) * $perPage))->getResultArray();
 
+        // --- Recharges ---
+        $rechargesPage = max(1, (int) $this->request->getGet('recharges_page'));
+        $rechargesBuilder = $db->table('client_recharges r')
+            ->select('r.id, r.client_id, r.package_id, r.router_id, r.start_date, r.expires_on, r.created_at, p.name AS package_name, ro.name AS router_name')
+            ->join('packages p', 'p.id = r.package_id', 'left')
+            ->join('routers ro', 'ro.id = r.router_id', 'left')
+            ->where('r.client_id', $id)
+            ->orderBy('r.created_at', 'DESC');
+
+        $totalRecharges = $rechargesBuilder->countAllResults(false);
+        $recharges = $rechargesBuilder->get($perPage, max(0, ($rechargesPage - 1) * $perPage))->getResultArray();
+
         // --- AJAX Partial Render ---
         if ($isAjax) {
-            $tableType = $this->request->getGet('table'); // 'subscriptions' or 'mpesa'
+            $tableType = $this->request->getGet('table'); // 'subscriptions', 'mpesa', or 'recharges'
             if ($tableType === 'subscriptions') {
                 return view('admin/clients/partials/subscriptions_table', [
                     'subscriptions' => $subscriptions,
@@ -340,6 +351,14 @@ class Clients extends BaseController
                     'perPage' => $perPage
                 ]);
             }
+            if ($tableType === 'recharges') {
+                return view('admin/clients/partials/recharges_table', [
+                    'recharges' => $recharges,
+                    'rechargesTotal' => $totalRecharges,
+                    'rechargesPage' => $rechargesPage,
+                    'perPage' => $perPage
+                ]);
+            }
         }
 
         // --- Full Page Render ---
@@ -351,8 +370,11 @@ class Clients extends BaseController
             'mpesaTransactions' => $mpesaTransactions,
             'mpesaTotal' => $totalMpesa,
             'mpesaPage' => $mpesaPage,
+            'recharges' => $recharges,
+            'rechargesTotal' => $totalRecharges,
+            'rechargesPage' => $rechargesPage,
             'perPage' => $perPage,
-            'db' => $db // pass db for packages dropdown in recharge form
+            'db' => $db
         ]);
     }
     /**
