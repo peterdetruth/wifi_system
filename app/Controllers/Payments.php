@@ -50,7 +50,7 @@ class Payments extends BaseController
                 payments.*,
                 clients.username AS client_username,
                 packages.name AS package_name,
-                mpesa_transactions.mpesa_receipt AS mpesa_code
+                mpesa_transactions.mpesa_receipt_number AS mpesa_code
             ")
             ->join('clients', 'clients.id = payments.client_id', 'left')
             ->join('packages', 'packages.id = payments.package_id', 'left')
