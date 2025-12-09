@@ -117,6 +117,20 @@ class Payments extends BaseController
         }
 
         try {
+            // --- NEW: Guard against existing pending transactions ---
+            $existingPending = $this->mpesaTransactionModel
+                ->where('client_id', $clientId)
+                ->where('package_id', $packageId)
+                ->where('status', 'Pending')
+                ->orderBy('id', 'DESC')
+                ->first();
+
+            if ($existingPending) {
+                mpesa_debug("⚠️ Existing pending transaction found: " . ($existingPending['checkout_request_id'] ?? 'N/A'));
+                return redirect()->to('/client/payments/waiting/' . ($existingPending['checkout_request_id'] ?? ''));
+            }
+
+            // Initiate M-PESA transaction
             mpesa_debug("🔸 Initiating M-PESA transaction for client {$clientUsername} (clientId={$clientId}, packageId={$packageId}, amount={$amount})");
 
             $checkoutRequestId = $this->mpesaService->initiateTransaction(

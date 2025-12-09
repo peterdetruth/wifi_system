@@ -226,6 +226,15 @@ class MpesaService
             $merchantRequestId = $stkResponse['MerchantRequestID'] ?? null;
             $checkoutRequestId = $stkResponse['CheckoutRequestID'] ?? null;
 
+            // Guard: if checkoutRequestId already exists, return it
+            if ($checkoutRequestId) {
+                $existing = $this->transactionModel->where('checkout_request_id', $checkoutRequestId)->first();
+                if ($existing) {
+                    $this->logger->info("savePendingTransaction: checkout_request_id already exists, returning existing.");
+                    return $checkoutRequestId;
+                }
+            }
+
             $insert = [
                 'client_id' => $clientId,
                 'package_id' => $packageId,
@@ -239,7 +248,6 @@ class MpesaService
             ];
 
             $this->transactionModel->insert($insert);
-
             $this->logger->info("STK Push transaction saved", [
                 'checkoutRequestID' => $checkoutRequestId,
                 'insert_id' => $this->transactionModel->getInsertID()
@@ -352,52 +360,9 @@ class MpesaService
             $mpesaReceipt = 'UNKNOWN_' . $transaction['id'];
         }
 
-        // -----------------------
-        // IDEMPOTENCY CHECKS
-        // -----------------------
+        $subscriptionModel = new \App\Models\SubscriptionModel();
 
-        // 1) If payment exists for this mpesa_transaction_id, and subscription already created for that payment,
-        //    assume callback already processed — return success without duplicating.
-        try {
-            $subscriptionModel = new \App\Models\SubscriptionModel();
-
-            $existingPayment = $this->paymentsModel->where('mpesa_transaction_id', $transaction['id'])->first();
-            if ($existingPayment) {
-                $existingSub = $subscriptionModel->where('payment_id', $existingPayment['id'])->first();
-                if ($existingSub) {
-                    $this->logger->info("Callback already processed: subscription exists for payment.", [
-                        'transaction_id' => $transaction['id'],
-                        'payment_id' => $existingPayment['id'],
-                        'subscription_id' => $existingSub['id'] ?? null,
-                    ]);
-
-                    return ['ResultCode' => 0, 'ResultDesc' => 'Callback already processed'];
-                }
-            }
-
-            // 2) If another payment already exists with the same mpesa receipt number, treat as duplicate
-            //    (this helps if the callback was processed for a different transaction earlier).
-            $paymentByReceipt = $this->paymentsModel->where('mpesa_receipt_number', $mpesaReceipt)->first();
-            if ($paymentByReceipt) {
-                // If this payment is tied to the same mpesa_transaction_id then it's okay and will continue,
-                // but if it's a different payment (already processed), skip duplicate processing.
-                if (empty($existingPayment) || ($paymentByReceipt['mpesa_transaction_id'] ?? null) != $transaction['id']) {
-                    $this->logger->info("Callback duplicate detected by receipt — skipping duplicate processing", [
-                        'mpesa_receipt' => $mpesaReceipt,
-                        'existing_payment_id' => $paymentByReceipt['id']
-                    ]);
-                    return ['ResultCode' => 0, 'ResultDesc' => 'Callback already processed'];
-                }
-            }
-        } catch (\Throwable $e) {
-            // If idempotency checks fail unexpectedly, log and continue with processing to avoid losing a real payment.
-            $this->logger->error("Idempotency checks failed, continuing processing", ['exception' => $e->getMessage()]);
-        }
-
-        // -----------------------
-        // Proceed to update transaction and create payment/subscription
-        // -----------------------
-
+        // Update mpesa_transactions row first (best-effort)
         try {
             $this->transactionModel->update($transaction['id'], [
                 'amount' => $amount ?? $transaction['amount'],
@@ -413,34 +378,70 @@ class MpesaService
             $this->logger->error("Failed to update mpesa_transactions", ['exception' => $e->getMessage()]);
         }
 
+        // Start DB transaction for atomic payment+subscription creation
         $this->db->transStart();
         try {
-            // Create or update payment
-            $paymentRow = $this->paymentsModel->where('mpesa_transaction_id', $transaction['id'])->first();
-            $paymentData = [
-                'mpesa_transaction_id' => $transaction['id'],
-                'client_id' => $transaction['client_id'],
-                'package_id' => $transaction['package_id'],
-                'amount' => $amount ?? $transaction['amount'],
-                'payment_method' => 'mpesa',
-                'status' => 'completed',
-                'mpesa_receipt_number' => $mpesaReceipt,
-                'phone' => $phone,
-                'transaction_date' => $transactionDate,
-                'created_at' => date('Y-m-d H:i:s')
-            ];
+            // Try to obtain a lock on payment rows for this mpesa_transaction or receipt to avoid race
+            // Use SELECT ... FOR UPDATE when supported (DB driver will accept raw query)
+            $db = $this->db;
+            $sql = "SELECT id FROM payments WHERE mpesa_transaction_id = ? OR mpesa_receipt_number = ? FOR UPDATE";
+            $res = $db->query($sql, [$transaction['id'], $mpesaReceipt]);
+            $existing = $res->getRowArray();
 
-            if ($paymentRow) {
-                $this->paymentsModel->update($paymentRow['id'], $paymentData);
-                $paymentId = $paymentRow['id'];
+            // If payment already exists and subscription exists, bail out (idempotent)
+            if ($existing) {
+                $existingPaymentId = $existing['id'];
+                $existingSub = $subscriptionModel->where('payment_id', $existingPaymentId)->first();
+                if ($existingSub) {
+                    $this->logger->info("Callback already processed (locked check).", [
+                        'transaction_id' => $transaction['id'],
+                        'payment_id' => $existingPaymentId,
+                        'subscription_id' => $existingSub['id']
+                    ]);
+                    $this->db->transComplete();
+                    return ['ResultCode' => 0, 'ResultDesc' => 'Callback already processed'];
+                }
+                // If payment exists but subscription does not, we'll continue and create subscription below using existingPaymentId
+                $paymentId = $existingPaymentId;
             } else {
-                $paymentId = $this->paymentsModel->insert($paymentData, true);
+                // Payment does not exist — create it
+                $paymentData = [
+                    'mpesa_transaction_id' => $transaction['id'],
+                    'client_id' => $transaction['client_id'],
+                    'package_id' => $transaction['package_id'],
+                    'amount' => $amount ?? $transaction['amount'],
+                    'payment_method' => 'mpesa',
+                    'status' => 'completed',
+                    'mpesa_receipt_number' => $mpesaReceipt,
+                    'phone' => $phone,
+                    'transaction_date' => $transactionDate,
+                    'created_at' => date('Y-m-d H:i:s')
+                ];
+
+                // Insert payment — may throw duplicate-key if another worker inserted meanwhile
+                try {
+                    $paymentId = $this->paymentsModel->insert($paymentData, true);
+                } catch (\Throwable $e) {
+                    // Duplicate key or other race — re-query to get existing payment id
+                    $this->logger->warning("Payment insert race occurred, selecting existing payment", ['exception' => $e->getMessage()]);
+                    $existingPayment = $this->paymentsModel->where('mpesa_transaction_id', $transaction['id'])
+                        ->orWhere('mpesa_receipt_number', $mpesaReceipt)
+                        ->first();
+                    $paymentId = $existingPayment['id'] ?? null;
+                }
             }
 
-            // Double-check: if a subscription already exists for this payment, skip creating another
+            if (!$paymentId) {
+                // Something unexpected: cannot create nor find payment
+                $this->logger->error("Could not create or find payment record for transaction", ['transaction_id' => $transaction['id']]);
+                $this->db->transRollback();
+                return ['ResultCode' => 1, 'ResultDesc' => 'Processing error'];
+            }
+
+            // Check again for existing subscription tied to this payment
             $existingSubForPayment = $subscriptionModel->where('payment_id', $paymentId)->first();
             if ($existingSubForPayment) {
-                $this->logger->info("Subscription already exists for this payment (post-insert check)", [
+                $this->logger->info("Subscription exists for payment (post-insert check)", [
                     'payment_id' => $paymentId,
                     'subscription_id' => $existingSubForPayment['id']
                 ]);
@@ -453,7 +454,6 @@ class MpesaService
                 ->where('package_id', $transaction['package_id'])
                 ->where('status', 'active')
                 ->findAll();
-
             foreach ($activeSubs as $sub) {
                 $subscriptionModel->update($sub['id'], ['status' => 'expired', 'updated_at' => date('Y-m-d H:i:s')]);
             }
@@ -463,39 +463,41 @@ class MpesaService
             $package = $this->packageModel->find($transaction['package_id']);
             $expiresOn = $this->calculateSubscriptionExpiry($package, $startDate);
 
-            $subId = $subscriptionModel->insert([
-                'client_id' => $transaction['client_id'],
-                'package_id' => $transaction['package_id'],
-                'payment_id' => $paymentId,
-                'start_date' => $startDate,
-                'expires_on' => $expiresOn,
-                'status' => 'active'
-            ], true);
+            try {
+                $subId = $subscriptionModel->insert([
+                    'client_id' => $transaction['client_id'],
+                    'package_id' => $transaction['package_id'],
+                    'payment_id' => $paymentId,
+                    'start_date' => $startDate,
+                    'expires_on' => $expiresOn,
+                    'status' => 'active'
+                ], true);
+            } catch (\Throwable $e) {
+                // If subscription unique constraint triggers, fetch existing subscription
+                $this->logger->warning("Subscription insert race or duplicate", ['exception' => $e->getMessage()]);
+                $existing = $subscriptionModel->where('payment_id', $paymentId)->first();
+                $subId = $existing['id'] ?? null;
+            }
 
-            $this->logger->info("Created new subscription record", [
-                'subscription_id' => $subId,
-                'client_id' => $transaction['client_id'],
-                'package_id' => $transaction['package_id']
-            ]);
+            if (!$subId) {
+                $this->logger->error("Failed to create or find subscription for payment", ['payment_id' => $paymentId]);
+                $this->db->transRollback();
+                return ['ResultCode' => 1, 'ResultDesc' => 'Processing error'];
+            }
 
-            // Router provisioning debug/log (no functional change)
-            $routerId = $package['router_id'] ?? null;
-            $this->logger->debug("Router activation placeholder called", [
-                'subscription_id' => $subId,
-                'router_id' => $routerId,
-                'package_id' => $transaction['package_id'],
-                'package_name' => $package['name'] ?? null,
-                'package_type' => $package['type'] ?? null
-            ]);
-
-            // Activate client on router / network
-            $activationService = new ActivationService($this->logger);
-            $activationService->activate($transaction['client_id'], $transaction['package_id'], (float)$amount);
-
+            // Router provisioning and activation (outside DB critical section ideally)
             $this->db->transComplete();
+
+            try {
+                $activationService = new ActivationService($this->logger);
+                $activationService->activate($transaction['client_id'], $transaction['package_id'], (float)$amount);
+            } catch (\Throwable $e) {
+                $this->logger->error("Activation failed after commit", ['exception' => $e->getMessage()]);
+            }
         } catch (\Throwable $e) {
             $this->db->transRollback();
             $this->logger->error("Exception during payments/subscriptions transaction", ['exception' => $e->getMessage()]);
+            return ['ResultCode' => 1, 'ResultDesc' => 'Processing error'];
         }
 
         $this->logger->info("Callback processing finished successfully", [

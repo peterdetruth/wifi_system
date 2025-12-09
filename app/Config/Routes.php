@@ -175,9 +175,6 @@ $routes->group('client', ['namespace' => 'App\Controllers\Client'], static funct
         $routes->get('payments/status/(:segment)', 'Payments::status/$1');
         $routes->get('payments/pending/(:segment)', 'Payments::pending/$1');
         $routes->get('payments/checkStatus', 'Payments::checkStatus');
-
-        // M-PESA callback endpoint (for client)
-        $routes->post('mpesa/callback', 'Mpesa::callback');
     });
 });
 
