@@ -4,43 +4,35 @@ namespace App\Controllers\Client;
 
 use App\Controllers\BaseController;
 use App\Models\ClientModel;
+use App\Services\LogService;
 use Config\Database;
 
 class Auth extends BaseController
 {
     protected $clientModel;
+    protected LogService $logService;
 
     public function __construct()
     {
         helper(['form', 'url']);
         $this->clientModel = new ClientModel();
+        $this->logService = new LogService();
     }
 
-    /**
-     * Show registration form
-     */
     public function register()
     {
-        // If logged in, redirect to dashboard
         if (session()->get('client_logged_in')) {
             return redirect()->to('/client/dashboard');
         }
 
-        $data = [
-            'title' => 'Client Register',
-        ];
-        return view('client/auth/register', $data);
+        return view('client/auth/register', ['title' => 'Client Register']);
     }
 
-    /**
-     * Handle registration POST
-     */
     public function registerPost()
     {
         try {
             $post = $this->request->getPost();
 
-            // Basic validation (Model also has rules)
             $rules = [
                 'full_name' => 'required|min_length[3]',
                 'username'  => 'required|min_length[3]|is_unique[clients.username]',
@@ -64,10 +56,18 @@ class Auth extends BaseController
             ];
 
             if ($this->clientModel->save($saveData)) {
+                $clientId = $this->clientModel->getInsertID();
+                $this->logService->info(
+                    'registration',
+                    'Client registered successfully',
+                    ['username' => $post['username'], 'email' => $post['email']],
+                    $clientId,
+                    $this->request->getIPAddress()
+                );
+
                 return redirect()->to('/client/login')->with('success', 'Registration successful. Please login.');
             }
 
-            // Model errors or DB error
             $dbError = $this->clientModel->errors() ?: Database::connect()->error();
             return redirect()->back()->withInput()->with('error', 'Failed to register: ' . print_r($dbError, true));
         } catch (\Exception $e) {
@@ -75,55 +75,56 @@ class Auth extends BaseController
         }
     }
 
-    /**
-     * Show login form
-     */
     public function login()
     {
         if (session()->get('client_logged_in')) {
             return redirect()->to('/client/dashboard');
         }
 
-        $data = [
-            'title' => 'Client Login',
-        ];
-        return view('client/auth/login', $data);
+        return view('client/auth/login', ['title' => 'Client Login']);
     }
 
-    /**
-     * Handle login POST
-     */
     public function loginPost()
     {
         try {
             $post = $this->request->getPost();
-            $rules = [
-                'username' => 'required',
-                'password' => 'required'
-            ];
+            $rules = ['username' => 'required', 'password' => 'required'];
 
             if (! $this->validate($rules)) {
                 return redirect()->back()->withInput()->with('error', $this->validator->getErrors());
             }
 
-            // Allow login by username or phone or email (try username first)
             $identifier = $post['username'];
-
             $client = $this->clientModel
                 ->where('username', $identifier)
                 ->orWhere('email', $identifier)
                 ->orWhere('phone', $identifier)
                 ->first();
 
+            $ip = $this->request->getIPAddress();
+
             if (! $client) {
+                $this->logService->warning(
+                    'login',
+                    'Client login failed: user not found',
+                    ['identifier' => $identifier],
+                    null,
+                    $ip
+                );
                 return redirect()->back()->withInput()->with('error', 'User not found.');
             }
 
             if (! password_verify($post['password'], $client['password'])) {
+                $this->logService->warning(
+                    'login',
+                    'Client login failed: invalid password',
+                    ['username' => $client['username']],
+                    $client['id'],
+                    $ip
+                );
                 return redirect()->back()->withInput()->with('error', 'Invalid credentials.');
             }
 
-            // Set session for client
             session()->set([
                 'client_id'        => $client['id'],
                 'client_username'  => $client['username'],
@@ -131,22 +132,38 @@ class Auth extends BaseController
                 'client_logged_in' => true
             ]);
 
+            $this->logService->info(
+                'login',
+                'Client login successful',
+                ['username' => $client['username']],
+                $client['id'],
+                $ip
+            );
+
             return redirect()->to('/client/dashboard')->with('success', 'Welcome back, ' . $client['full_name']);
         } catch (\Exception $e) {
             return redirect()->back()->withInput()->with('error', 'Error: ' . $e->getMessage());
         }
     }
 
-    /**
-     * Logout client
-     */
     public function logout()
     {
-        // ✅ Clear client session
+        $session = session();
+        $clientId = $session->get('client_id');
+        $username = $session->get('client_username');
+        $ip = $this->request->getIPAddress();
+
+        $this->logService->info(
+            'login',
+            'Client logged out',
+            ['username' => $username],
+            $clientId,
+            $ip
+        );
+
         session()->remove(['client_logged_in', 'client_id', 'client_name', 'client_email']);
         session()->destroy();
 
-        // ✅ Redirect with flash message
         return redirect()
             ->to(base_url('client/login'))
             ->with('success', 'You have been logged out successfully.');
