@@ -9,6 +9,7 @@ use App\Models\PackageModel;
 use App\Models\SubscriptionModel;
 use CodeIgniter\Database\BaseConnection;
 use App\Services\ActivationService;
+use App\Services\LogService;
 
 class MpesaService
 {
@@ -18,6 +19,7 @@ class MpesaService
     protected PackageModel $packageModel;
     protected MpesaLogger $logger;
     protected BaseConnection $db;
+    protected $logService;
 
     public function __construct(MpesaLogger $logger)
     {
@@ -27,6 +29,7 @@ class MpesaService
         $this->clientModel = new ClientModel();
         $this->packageModel = new PackageModel();
         $this->db = \Config\Database::connect();
+        $this->logService = new LogService();
     }
 
     // ------------------------------------------------------------------------
