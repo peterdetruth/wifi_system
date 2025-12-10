@@ -112,6 +112,7 @@ $routes->group('admin/features', ['namespace' => 'App\Controllers\Admin'], funct
 
 $routes->get('admin/maintenance/schema', 'Admin\MaintenanceController::checkSchema');
 $routes->get('admin/maintenance/schema-detailed', 'Admin\MaintenanceController::checkSchema');
+$routes->get('admin/logs', 'Admin\LogController::index');
 
 // ==============================
 // 💸 M-PESA CALLBACK

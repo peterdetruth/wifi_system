@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -56,14 +57,17 @@
         <a href="<?= base_url('admin/payments') ?>" class="list-group-item bg-dark text-white">
           <i class="bi bi-cash-coin me-2"></i> Payments
         </a>
-        <a href="<?= base_url('admin/mpesa-logs') ?>" class="list-group-item bg-dark text-white">
-          <i class="bi bi-phone-vibrate me-2"></i> M-PESA Logs
-        </a>
 
         <!-- SUBSCRIBERS -->
         <div class="menu-section text-secondary">Features</div>
         <a href="<?= base_url('admin/features') ?>" class="list-group-item bg-dark text-white">
           <i class="bi bi-list-check me-2"></i> Features
+        </a>
+
+        <!-- SYSTEM -->
+        <div class="menu-section text-secondary">System</div>
+        <a href="<?= base_url('admin/logs') ?>" class="list-group-item bg-dark text-white">
+          <i class="bi bi-journal-text me-2"></i> Logs
         </a>
 
         <!-- LOGOUT -->
@@ -108,4 +112,5 @@
     })();
   </script>
 </body>
+
 </html>
