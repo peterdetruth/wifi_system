@@ -44,7 +44,7 @@ class LogController extends BaseController
             $builder = $builder->where('created_at <=', $to . ' 23:59:59');
         }
 
-        $perPage = 5;
+        $perPage = 20;
         $logs    = $builder->orderBy('created_at', 'desc')->paginate($perPage, 'logs');
         $pager   = $builder->pager;
 
