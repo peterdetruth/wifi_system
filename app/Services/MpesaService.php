@@ -8,6 +8,7 @@ use App\Models\ClientModel;
 use App\Models\PackageModel;
 use App\Models\SubscriptionModel;
 use CodeIgniter\Database\BaseConnection;
+use CodeIgniter\HTTP\IncomingRequest;
 use App\Services\ActivationService;
 use App\Services\LogService;
 
@@ -19,7 +20,8 @@ class MpesaService
     protected PackageModel $packageModel;
     protected MpesaLogger $logger;
     protected BaseConnection $db;
-    protected $logService;
+    protected IncomingRequest $request;
+    protected LogService $logService;
 
     public function __construct(MpesaLogger $logger)
     {
@@ -30,6 +32,7 @@ class MpesaService
         $this->packageModel = new PackageModel();
         $this->db = \Config\Database::connect();
         $this->logService = new LogService();
+        $this->request = service('request');
     }
 
     // ------------------------------------------------------------------------
@@ -38,11 +41,19 @@ class MpesaService
 
     public function initiateTransaction(int $clientId, int $packageId, float $amount, string $phone): ?string
     {
+        $ip = $this->request->getIPAddress();
         try {
             $client = $this->clientModel->find($clientId);
             $package = $this->packageModel->find($packageId);
             if (!$client || !$package) {
                 $this->logger->error("Client or package not found for STK push", compact('clientId', 'packageId'));
+                $this->logService->error(
+                    'mpesa',
+                    'Client or package not found for STK push.',
+                    ['clientId' => $clientId, 'packageId' => $packageId, 'phone' => $phone],
+                    $clientId,
+                    $ip
+                );
                 return null;
             }
 
@@ -54,11 +65,25 @@ class MpesaService
 
             if (!is_array($stkResponse) || ($stkResponse['ResponseCode'] ?? '') !== "0") {
                 $this->logger->warning("STK push failed, creating fallback transaction", $stkResponse ?? []);
+                $this->logService->warning(
+                    'mpesa',
+                    'STK push failed, creating fallback transaction.',
+                    ['clientId' => $clientId, 'packageId' => $packageId, 'phone' => $phone, 'stkResponse' => $stkResponse ?? []],
+                    $clientId,
+                    $ip
+                );
                 return $this->createFallbackTransaction($clientId, $packageId, $amount, $phone, $package);
             }
 
             $checkoutRequestId = $this->savePendingTransaction($clientId, $packageId, $amount, $phone, $stkResponse);
             $this->logger->info("STK push initiated successfully", compact('checkoutRequestId', 'clientId', 'packageId'));
+            $this->logService->info(
+                'mpesa',
+                'STK push initiated successfully.',
+                ['clientId' => $clientId, 'packageId' => $packageId, 'phone' => $phone, 'checkoutRequestId' => $checkoutRequestId],
+                $clientId,
+                $ip
+            );
 
             return $checkoutRequestId;
         } catch (\Throwable $e) {
@@ -67,6 +92,13 @@ class MpesaService
                 'clientId' => $clientId,
                 'packageId' => $packageId
             ]);
+            $this->logService->error(
+                'mpesa',
+                'Exception in initiateTransaction.',
+                ['clientId' => $clientId, 'packageId' => $packageId, 'error' => $e->getMessage()],
+                $clientId,
+                $ip
+            );
             return $this->createFallbackTransaction($clientId, $packageId, $amount, $phone);
         }
     }
@@ -76,9 +108,17 @@ class MpesaService
      */
     public function handleCallback(array $payload): array
     {
+        $ip = $this->request->getIPAddress();
         try {
             if (empty($payload['Body']['stkCallback'])) {
                 $this->logger->error("Invalid callback payload", $payload);
+                $this->logService->error(
+                    'mpesa',
+                    'Invalid callback payload.',
+                    ['payload' => $payload],
+                    null,
+                    $ip
+                );
                 return ['ResultCode' => 1, 'ResultDesc' => 'Invalid payload'];
             }
 
@@ -89,6 +129,13 @@ class MpesaService
             $resultDesc = $callback['ResultDesc'] ?? '';
 
             $this->logger->info("Received STK callback", compact('checkoutRequestId', 'merchantRequestId', 'resultCode', 'resultDesc'));
+            $this->logService->info(
+                'mpesa',
+                'Received STK callback.',
+                null,
+                null,
+                $ip
+            );
 
             $transaction = $this->transactionModel->where('checkout_request_id', $checkoutRequestId)->first()
                 ?: $this->safeInsertTransaction($merchantRequestId, $checkoutRequestId);
@@ -101,6 +148,13 @@ class MpesaService
         } catch (\Throwable $e) {
             $this->db->transRollback();
             $this->logger->error("Exception in handleCallback", ['message' => $e->getMessage()]);
+            $this->logService->error(
+                'mpesa',
+                'Exception in handleCallback.',
+                ['payload' => $payload, 'error' => $e->getMessage()],
+                null,
+                $ip
+            );
             return ['ResultCode' => 1, 'ResultDesc' => 'Internal error'];
         }
     }
@@ -112,6 +166,7 @@ class MpesaService
 
     public function reconnectUsingMpesaCode(string $mpesaCode, int $clientId): array
     {
+        $ip = $this->request->getIPAddress();
         try {
             $transaction = $this->transactionModel
                 ->where('mpesa_receipt_number', $mpesaCode)
@@ -144,16 +199,31 @@ class MpesaService
             $activationService->activate($clientId, $package['id'], (float)$transaction['amount']);
 
             $this->logger->info("Reconnect successful", compact('clientId', 'subId', 'mpesaCode'));
+            $this->logService->info(
+                'mpesa',
+                'Reconnect successful',
+                ['clientId' => $clientId, 'packageId' => $package['id'], 'subscription_id' => $subId, 'expires_o' => $expiresOn],
+                $clientId,
+                $ip
+            );
 
             return ['success' => true, 'message' => 'Reconnection successful.', 'subscription_id' => $subId, 'expires_on' => $expiresOn];
         } catch (\Throwable $e) {
             $this->logger->error("Exception during reconnectUsingMpesaCode", ['exception' => $e->getMessage()]);
+            $this->logService->error(
+                'mpesa',
+                'Exception during reconnectUsingMpesaCode',
+                ['error' => $e->getMessage()],
+                $clientId,
+                $ip
+            );
             return ['success' => false, 'message' => 'Internal error occurred.'];
         }
     }
 
     private function requestAccessToken(): ?string
     {
+        $ip = $this->request->getIPAddress();
         try {
             $consumerKey = getenv('MPESA_CONSUMER_KEY');
             $consumerSecret = getenv('MPESA_CONSUMER_SECRET');
@@ -169,12 +239,26 @@ class MpesaService
             $tokenResult = json_decode($response, true);
             if (!is_array($tokenResult) || empty($tokenResult['access_token'])) {
                 $this->logger->error("Failed to obtain M-PESA access token", $tokenResult ?? $response);
+                $this->logService->error(
+                    'mpesa',
+                    'Failed to obtain M-PESA access token',
+                    null,
+                    null,
+                    $ip
+                );
                 return null;
             }
 
             return $tokenResult['access_token'];
         } catch (\Throwable $e) {
             $this->logger->error("Exception requesting access token", ['exception' => $e->getMessage()]);
+            $this->logService->error(
+                'mpesa',
+                'Exception requesting access token',
+                ['error' => $e->getMessage()],
+                null,
+                $ip
+            );
             return null;
         }
     }
@@ -203,6 +287,7 @@ class MpesaService
 
     private function sendStkPush(string $accessToken, array $payload): ?array
     {
+        $ip = $this->request->getIPAddress();
         try {
             $ch = curl_init();
             curl_setopt($ch, CURLOPT_URL, getenv('MPESA_STK_URL'));
@@ -219,12 +304,20 @@ class MpesaService
             return json_decode($response, true);
         } catch (\Throwable $e) {
             $this->logger->error("Exception sending STK Push", ['exception' => $e->getMessage()]);
+            $this->logService->error(
+                'mpesa',
+                'Exception sending STK Push',
+                ['error' => $e->getMessage()],
+                null,
+                $ip
+            );
             return null;
         }
     }
 
     private function savePendingTransaction(int $clientId, int $packageId, float $amount, string $phone, array $stkResponse): ?string
     {
+        $ip = $this->request->getIPAddress();
         try {
             $merchantRequestId = $stkResponse['MerchantRequestID'] ?? null;
             $checkoutRequestId = $stkResponse['CheckoutRequestID'] ?? null;
@@ -255,16 +348,31 @@ class MpesaService
                 'checkoutRequestID' => $checkoutRequestId,
                 'insert_id' => $this->transactionModel->getInsertID()
             ]);
+            $this->logService->info(
+                'mpesa',
+                'STK Push transaction saved',
+                ['checkoutRequestID' => $checkoutRequestId, 'transaction_insert_id' => $this->transactionModel->getInsertID()],
+                $clientId,
+                $ip
+            );
 
             return $checkoutRequestId;
         } catch (\Throwable $e) {
             $this->logger->error("Exception saving pending transaction", ['exception' => $e->getMessage()]);
+            $this->logService->error(
+                'mpesa',
+                'Exception saving pending transaction',
+                ['error' => $e->getMessage()],
+                $clientId,
+                $ip
+            );
             return null;
         }
     }
 
     private function createFallbackTransaction(int $clientId, int $packageId, float $amount, string $phone, ?array $package = null): ?string
     {
+        $ip = $this->request->getIPAddress();
         try {
             if (!$package) {
                 $package = $this->packageModel->find($packageId);
@@ -304,11 +412,25 @@ class MpesaService
                     'package_id' => $packageId,
                     'expires_on' => $expiresOn
                 ]);
+                $this->logService->info(
+                    'mpesa',
+                    'Created fallback subscription with correct expiry.',
+                    ['clientId' => $clientId, 'packageId' => $packageId, 'phone' => $phone, 'expires_on' => $expiresOn],
+                    $clientId,
+                    $ip
+                );
             }
 
             return $transactionId;
         } catch (\Throwable $e) {
             $this->logger->error("Failed to create fallback transaction", ['exception' => $e->getMessage()]);
+            $this->logService->error(
+                'mpesa',
+                'Failed to create fallback transaction.',
+                ['clientId' => $clientId, 'packageId' => $packageId, 'phone' => $phone, 'error' => $e->getMessage()],
+                $clientId,
+                $ip
+            );
             return null;
         }
     }
@@ -333,6 +455,8 @@ class MpesaService
 
     private function processSuccessfulCallback(array $transaction, array $callback, string $resultDesc, string $checkoutRequestId): array
     {
+        $ip = $this->request->getIPAddress();
+
         $metadata = $callback['CallbackMetadata']['Item'] ?? [];
         $amount = null;
         $mpesaReceipt = null;
@@ -379,6 +503,13 @@ class MpesaService
             ]);
         } catch (\Throwable $e) {
             $this->logger->error("Failed to update mpesa_transactions", ['exception' => $e->getMessage()]);
+            $this->logService->error(
+                'mpesa',
+                'Failed to update mpesa_transactions.',
+                ['error' => $e->getMessage()],
+                null,
+                $ip
+            );
         }
 
         // Start DB transaction for atomic payment+subscription creation
@@ -401,6 +532,13 @@ class MpesaService
                         'payment_id' => $existingPaymentId,
                         'subscription_id' => $existingSub['id']
                     ]);
+                    $this->logService->info(
+                        'mpesa',
+                        'Callback already processed (locked check)',
+                        ['transaction_id' => $transaction['id'], 'payment_id' => $existingPaymentId, 'subscription_id' => $existingSub['id']],
+                        null,
+                        $ip
+                    );
                     $this->db->transComplete();
                     return ['ResultCode' => 0, 'ResultDesc' => 'Callback already processed'];
                 }
@@ -427,6 +565,13 @@ class MpesaService
                 } catch (\Throwable $e) {
                     // Duplicate key or other race — re-query to get existing payment id
                     $this->logger->warning("Payment insert race occurred, selecting existing payment", ['exception' => $e->getMessage()]);
+                    $this->logService->warning(
+                        'mpesa',
+                        'Payment insert race occurred, selecting existing payment',
+                        ['error' => $e->getMessage()],
+                        null,
+                        $ip
+                    );
                     $existingPayment = $this->paymentsModel->where('mpesa_transaction_id', $transaction['id'])
                         ->orWhere('mpesa_receipt_number', $mpesaReceipt)
                         ->first();
@@ -437,6 +582,13 @@ class MpesaService
             if (!$paymentId) {
                 // Something unexpected: cannot create nor find payment
                 $this->logger->error("Could not create or find payment record for transaction", ['transaction_id' => $transaction['id']]);
+                $this->logService->error(
+                    'mpesa',
+                    'Could not create or find payment record for transaction',
+                    ['transaction_id' => $transaction['id']],
+                    null,
+                    $ip
+                );
                 $this->db->transRollback();
                 return ['ResultCode' => 1, 'ResultDesc' => 'Processing error'];
             }
@@ -448,6 +600,13 @@ class MpesaService
                     'payment_id' => $paymentId,
                     'subscription_id' => $existingSubForPayment['id']
                 ]);
+                $this->logService->debug(
+                    'mpesa',
+                    'Subscription exists for payment (post-insert check)',
+                    ['payment_id' => $paymentId, 'subscription_id' => $existingSubForPayment['id']],
+                    null,
+                    $ip
+                );
                 $this->db->transComplete();
                 return ['ResultCode' => 0, 'ResultDesc' => 'Callback already processed'];
             }
@@ -478,12 +637,26 @@ class MpesaService
             } catch (\Throwable $e) {
                 // If subscription unique constraint triggers, fetch existing subscription
                 $this->logger->warning("Subscription insert race or duplicate", ['exception' => $e->getMessage()]);
+                $this->logService->warning(
+                    'mpesa',
+                    'Subscription insert race or duplicate',
+                    ['error' => $e->getMessage()],
+                    null,
+                    $ip
+                );
                 $existing = $subscriptionModel->where('payment_id', $paymentId)->first();
                 $subId = $existing['id'] ?? null;
             }
 
             if (!$subId) {
                 $this->logger->error("Failed to create or find subscription for payment", ['payment_id' => $paymentId]);
+                $this->logService->error(
+                    'mpesa',
+                    'Failed to create or find subscription for payment',
+                    ['payment_id' => $paymentId],
+                    null,
+                    $ip
+                );
                 $this->db->transRollback();
                 return ['ResultCode' => 1, 'ResultDesc' => 'Processing error'];
             }
@@ -496,10 +669,24 @@ class MpesaService
                 $activationService->activate($transaction['client_id'], $transaction['package_id'], (float)$amount);
             } catch (\Throwable $e) {
                 $this->logger->error("Activation failed after commit", ['exception' => $e->getMessage()]);
+                $this->logService->error(
+                    'mpesa',
+                    'Activation failed after commit',
+                    ['error' => $e->getMessage()],
+                    null,
+                    $ip
+                );
             }
         } catch (\Throwable $e) {
             $this->db->transRollback();
             $this->logger->error("Exception during payments/subscriptions transaction", ['exception' => $e->getMessage()]);
+            $this->logService->error(
+                'mpesa',
+                'Exception during payments/subscriptions transaction',
+                ['error' => $e->getMessage()],
+                null,
+                $ip
+            );
             return ['ResultCode' => 1, 'ResultDesc' => 'Processing error'];
         }
 
@@ -507,6 +694,13 @@ class MpesaService
             'checkout_request_id' => $checkoutRequestId,
             'mpesa_receipt' => $mpesaReceipt
         ]);
+        $this->logService->info(
+            'mpesa',
+            'Callback processing finished successfully',
+            ['checkout_request_id' => $checkoutRequestId, 'mpesa_receipt' => $mpesaReceipt],
+            null,
+            $ip
+        );
 
         return ['ResultCode' => 0, 'ResultDesc' => 'Callback processed successfully'];
     }
@@ -514,6 +708,7 @@ class MpesaService
 
     private function safeInsertTransaction(?string $merchantRequestId, ?string $checkoutRequestId): ?array
     {
+        $ip = $this->request->getIPAddress();
         try {
             $existing = $this->transactionModel->where('checkout_request_id', $checkoutRequestId)->first();
             if ($existing) return $existing;
@@ -535,12 +730,20 @@ class MpesaService
             return $this->transactionModel->where('checkout_request_id', $checkoutRequestId)->first();
         } catch (\Throwable $e) {
             $this->logger->error("Exception in safeInsertTransaction", ['exception' => $e->getMessage()]);
+            $this->logService->error(
+                'mpesa',
+                'Exception in safeInsertTransaction',
+                ['error' => $e->getMessage()],
+                null,
+                $ip
+            );
             return null;
         }
     }
 
     private function markTransactionFailed(array $transaction, int $resultCode, string $resultDesc): array
     {
+        $ip = $this->request->getIPAddress();
         try {
             $this->transactionModel->update($transaction['id'], [
                 'status' => 'Failed',
@@ -550,6 +753,13 @@ class MpesaService
             ]);
         } catch (\Throwable $e) {
             $this->logger->error("Failed to update transaction as failed", ['exception' => $e->getMessage()]);
+            $this->logService->error(
+                'mpesa',
+                'Failed to update transaction as failed',
+                ['error' => $e->getMessage()],
+                null,
+                $ip
+            );
         }
 
         $this->db->transStart();
@@ -579,6 +789,13 @@ class MpesaService
         } catch (\Throwable $e) {
             $this->db->transRollback();
             $this->logger->error("Exception while marking failed payments/subscriptions", ['exception' => $e->getMessage()]);
+            $this->logService->error(
+                'mpesa',
+                'Exception while marking failed payments/subscriptions',
+                ['error' => $e->getMessage()],
+                null,
+                $ip
+            );
         }
 
         return ['ResultCode' => 0, 'ResultDesc' => 'Acknowledged failure'];

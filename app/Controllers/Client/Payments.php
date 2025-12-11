@@ -267,6 +267,7 @@ class Payments extends BaseController
 
     public function success($checkoutRequestId = null)
     {
+        $ip = $this->request->getIPAddress();
         $clientId = session()->get('client_id');
         if (!$clientId) return redirect()->to('/client/login')->with('error', 'Please login.');
 
@@ -280,6 +281,14 @@ class Payments extends BaseController
         $package = $this->packageModel->find($subscription['package_id']);
         $client = $this->clientModel->find($clientId);
         $syncResult = $this->provisionRouter($client, $package);
+
+        $this->logService->debug(
+            'mpesa',
+            'New subscription created after successful payment',
+            ['package' => $package, 'subscription' => $subscription],
+            $clientId,
+            $ip
+        );
 
         return view('client/payments/success', [
             'mpesaTx' => $mpesaTx,
