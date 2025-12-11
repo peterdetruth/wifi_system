@@ -9,10 +9,12 @@ use App\Models\TransactionModel;
 use App\Models\MpesaTransactionModel;
 use App\Models\VoucherModel;
 use App\Models\ClientModel;
+use App\Libraries\RouterSync;
+
 use App\Services\ActivationService;
 use App\Services\MpesaLogger;
 use App\Services\MpesaService;
-use App\Libraries\RouterSync;
+use App\Services\LogService;
 
 class Payments extends BaseController
 {
@@ -26,6 +28,8 @@ class Payments extends BaseController
     protected MpesaLogger $mpesaLogger;
     protected ActivationService $activationService;
     protected MpesaService $mpesaService;
+    protected LogService $logService;
+    
     protected RouterSync $routerSync;
 
     public function __construct()
@@ -42,6 +46,7 @@ class Payments extends BaseController
         $this->mpesaLogger = new MpesaLogger();
         $this->activationService = new ActivationService($this->mpesaLogger);
         $this->mpesaService = new MpesaService($this->mpesaLogger);
+        $this->logService = new LogService();
 
         $this->routerSync = new RouterSync();
     }
