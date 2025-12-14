@@ -184,54 +184,155 @@ class MpesaService
     public function handleCallback(array $payload): array
     {
         $ip = $this->request->getIPAddress();
-        try {
-            if (empty($payload['Body']['stkCallback'])) {
-                $this->logger->error("Invalid callback payload", $payload);
-                $this->logService->error(
-                    'mpesa',
-                    'Invalid callback payload.',
-                    ['payload' => $payload],
-                    null,
-                    $ip
-                );
-                return ['ResultCode' => 1, 'ResultDesc' => 'Invalid payload'];
-            }
 
-            $callback = $payload['Body']['stkCallback'];
-            $checkoutRequestId = $callback['CheckoutRequestID'] ?? null;
-            $merchantRequestId = $callback['MerchantRequestID'] ?? null;
-            $resultCode = (int)($callback['ResultCode'] ?? 1);
-            $resultDesc = $callback['ResultDesc'] ?? '';
-
-            $this->logger->info("Received STK callback", compact('checkoutRequestId', 'merchantRequestId', 'resultCode', 'resultDesc'));
-            $this->logService->info(
-                'mpesa',
-                'Received STK callback.',
-                null,
-                null,
-                $ip
-            );
-
-            $transaction = $this->transactionModel->where('checkout_request_id', $checkoutRequestId)->first()
-                ?: $this->safeInsertTransaction($merchantRequestId, $checkoutRequestId);
-
-            if (!$transaction) return ['ResultCode' => 1, 'ResultDesc' => 'Transaction not found'];
-
-            if ($resultCode !== 0) return $this->markTransactionFailed($transaction, $resultCode, $resultDesc);
-
-            return $this->processSuccessfulCallback($transaction, $callback, $resultDesc, $checkoutRequestId);
-        } catch (\Throwable $e) {
-            $this->db->transRollback();
-            $this->logger->error("Exception in handleCallback", ['message' => $e->getMessage()]);
-            $this->logService->error(
-                'mpesa',
-                'Exception in handleCallback.',
-                ['payload' => $payload, 'error' => $e->getMessage()],
-                null,
-                $ip
-            );
-            return ['ResultCode' => 1, 'ResultDesc' => 'Internal error'];
+        if (empty($payload['Body']['stkCallback'])) {
+            return ['ResultCode' => 1, 'ResultDesc' => 'Invalid payload'];
         }
+
+        $callback = $payload['Body']['stkCallback'];
+
+        $checkoutRequestId  = $callback['CheckoutRequestID'] ?? null;
+        $merchantRequestId  = $callback['MerchantRequestID'] ?? null;
+        $resultCode         = (int) ($callback['ResultCode'] ?? 1);
+        $resultDesc         = $callback['ResultDesc'] ?? 'Unknown';
+
+        if (!$checkoutRequestId) {
+            return ['ResultCode' => 1, 'ResultDesc' => 'Missing CheckoutRequestID'];
+        }
+
+        // Find existing transaction
+        $transaction = $this->transactionModel
+            ->where('checkout_request_id', $checkoutRequestId)
+            ->first();
+
+        if (!$transaction) {
+            return ['ResultCode' => 1, 'ResultDesc' => 'Transaction not found'];
+        }
+
+        // ----------------------------
+        // FAILED PAYMENT
+        // ----------------------------
+        if ($resultCode !== 0) {
+            $this->transactionModel->update($transaction['id'], [
+                'status'       => 'Failed',
+                'result_code'  => $resultCode,
+                'result_desc'  => $resultDesc,
+                'updated_at'   => date('Y-m-d H:i:s')
+            ]);
+
+            return ['ResultCode' => 0, 'ResultDesc' => 'Failure recorded'];
+        }
+
+        // ----------------------------
+        // SUCCESSFUL PAYMENT
+        // ----------------------------
+
+        // Extract metadata
+        $metadata = $callback['CallbackMetadata']['Item'] ?? [];
+
+        $amount        = null;
+        $receipt       = null;
+        $phone         = null;
+        $transactionAt = date('Y-m-d H:i:s');
+
+        foreach ($metadata as $item) {
+            switch ($item['Name'] ?? '') {
+                case 'Amount':
+                    $amount = $item['Value'];
+                    break;
+                case 'MpesaReceiptNumber':
+                    $receipt = $item['Value'];
+                    break;
+                case 'PhoneNumber':
+                    $phone = $item['Value'];
+                    break;
+                case 'TransactionDate':
+                    $transactionAt = \DateTime::createFromFormat(
+                        'YmdHis',
+                        (string) $item['Value']
+                    )?->format('Y-m-d H:i:s') ?? $transactionAt;
+                    break;
+            }
+        }
+
+        if (!$receipt) {
+            return ['ResultCode' => 1, 'ResultDesc' => 'Missing receipt'];
+        }
+
+        // Start atomic DB transaction
+        $this->db->transStart();
+
+        // Update mpesa_transactions
+        $this->transactionModel->update($transaction['id'], [
+            'status'                  => 'Success',
+            'amount'                  => $amount,
+            'mpesa_receipt_number'    => $receipt,
+            'phone_number'            => $phone,
+            'transaction_date'        => $transactionAt,
+            'result_code'             => 0,
+            'result_desc'             => $resultDesc,
+            'updated_at'              => date('Y-m-d H:i:s')
+        ]);
+
+        // Check if payment already exists (idempotent)
+        $existingPayment = $this->paymentsModel
+            ->where('mpesa_transaction_id', $transaction['id'])
+            ->first();
+
+        if (!$existingPayment) {
+            $paymentId = $this->paymentsModel->insert([
+                'mpesa_transaction_id' => $transaction['id'],
+                'client_id'            => $transaction['client_id'],
+                'package_id'           => $transaction['package_id'],
+                'amount'               => $amount,
+                'payment_method'       => 'mpesa',
+                'status'               => 'completed',
+                'mpesa_receipt_number' => $receipt,
+                'phone'                => $phone,
+                'transaction_date'     => $transactionAt,
+                'created_at'           => date('Y-m-d H:i:s')
+            ], true);
+        } else {
+            $paymentId = $existingPayment['id'];
+        }
+
+        // Check if subscription already exists
+        $subscriptionModel = new SubscriptionModel();
+        $existingSub = $subscriptionModel
+            ->where('payment_id', $paymentId)
+            ->first();
+
+        if (!$existingSub) {
+            $package = $this->packageModel->find($transaction['package_id']);
+
+            $startDate = date('Y-m-d H:i:s');
+            $expiresOn = $this->calculateSubscriptionExpiry($package, $startDate);
+
+            $subscriptionModel->insert([
+                'client_id'   => $transaction['client_id'],
+                'package_id'  => $transaction['package_id'],
+                'payment_id'  => $paymentId,
+                'start_date'  => $startDate,
+                'expires_on'  => $expiresOn,
+                'status'      => 'active'
+            ]);
+        }
+
+        $this->db->transComplete();
+
+        // Activation (AFTER commit)
+        try {
+            $activationService = new ActivationService($this->logger);
+            $activationService->activate(
+                $transaction['client_id'],
+                $transaction['package_id'],
+                (float) $amount
+            );
+        } catch (\Throwable $e) {
+            log_message('error', 'Activation failed: ' . $e->getMessage());
+        }
+
+        return ['ResultCode' => 0, 'ResultDesc' => 'Processed successfully'];
     }
 
     public function getExpiry(array $package, ?string $startDate = null): string
