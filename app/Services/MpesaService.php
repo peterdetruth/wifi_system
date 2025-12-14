@@ -39,67 +39,142 @@ class MpesaService
     // PUBLIC METHODS
     // ------------------------------------------------------------------------
 
-    public function initiateTransaction(int $clientId, int $packageId, float $amount, string $phone): ?string
-    {
+    public function initiateTransaction(
+        int $clientId,
+        int $packageId,
+        float $amount,
+        string $phone
+    ): ?string {
         $ip = $this->request->getIPAddress();
+
         try {
-            $client = $this->clientModel->find($clientId);
+            // ------------------------------------------------------------------
+            // 1. Validate client & package
+            // ------------------------------------------------------------------
+            $client  = $this->clientModel->find($clientId);
             $package = $this->packageModel->find($packageId);
+
             if (!$client || !$package) {
-                $this->logger->error("Client or package not found for STK push", compact('clientId', 'packageId'));
                 $this->logService->error(
                     'mpesa',
-                    'Client or package not found for STK push.',
-                    ['clientId' => $clientId, 'packageId' => $packageId, 'phone' => $phone],
+                    'Client or package not found before STK initiation',
+                    compact('clientId', 'packageId'),
                     $clientId,
                     $ip
                 );
                 return null;
             }
 
-            $accessToken = $this->requestAccessToken();
-            if (!$accessToken) return $this->createFallbackTransaction($clientId, $packageId, $amount, $phone, $package);
+            // ------------------------------------------------------------------
+            // 2. Normalize & validate phone (CRITICAL)
+            // ------------------------------------------------------------------
+            $phone = preg_replace('/\D/', '', $phone);
 
-            $stkPayload = $this->buildStkPayload($client, $package, $amount, $phone);
-            $stkResponse = $this->sendStkPush($accessToken, $stkPayload);
+            if (str_starts_with($phone, '0')) {
+                $phone = '254' . substr($phone, 1);
+            }
 
-            if (!is_array($stkResponse) || ($stkResponse['ResponseCode'] ?? '') !== "0") {
-                $this->logger->warning("STK push failed, creating fallback transaction", $stkResponse ?? []);
-                $this->logService->warning(
+            if (!preg_match('/^2547\d{8}$/', $phone)) {
+                $this->logService->error(
                     'mpesa',
-                    'STK push failed, creating fallback transaction.',
-                    ['clientId' => $clientId, 'packageId' => $packageId, 'phone' => $phone, 'stkResponse' => $stkResponse ?? []],
+                    'Invalid phone format for STK push',
+                    ['phone' => $phone],
                     $clientId,
                     $ip
                 );
-                return $this->createFallbackTransaction($clientId, $packageId, $amount, $phone, $package);
+                return null;
             }
 
-            $checkoutRequestId = $this->savePendingTransaction($clientId, $packageId, $amount, $phone, $stkResponse);
-            $this->logger->info("STK push initiated successfully", compact('checkoutRequestId', 'clientId', 'packageId'));
-            $this->logService->info(
+            // ------------------------------------------------------------------
+            // 3. Get access token (NO FALLBACK PRETENDING)
+            // ------------------------------------------------------------------
+            $accessToken = $this->requestAccessToken();
+            if (!$accessToken) {
+                $this->logService->error(
+                    'mpesa',
+                    'Failed to obtain M-PESA access token',
+                    null,
+                    $clientId,
+                    $ip
+                );
+                return null;
+            }
+
+            // ------------------------------------------------------------------
+            // 4. Build & send STK push
+            // ------------------------------------------------------------------
+            $payload     = $this->buildStkPayload($client, $package, $amount, $phone);
+            $stkResponse = $this->sendStkPush($accessToken, $payload);
+
+            $this->logService->debug(
                 'mpesa',
-                'STK push initiated successfully.',
-                ['clientId' => $clientId, 'packageId' => $packageId, 'phone' => $phone, 'checkoutRequestId' => $checkoutRequestId],
+                'Raw STK response received',
+                ['response' => $stkResponse],
                 $clientId,
                 $ip
             );
 
-            return $checkoutRequestId;
-        } catch (\Throwable $e) {
-            $this->logger->error("Exception in initiateTransaction", [
-                'message' => $e->getMessage(),
-                'clientId' => $clientId,
-                'packageId' => $packageId
+            // ------------------------------------------------------------------
+            // 5. STRICT success validation (THIS WAS MISSING)
+            // ------------------------------------------------------------------
+            if (
+                !is_array($stkResponse) ||
+                ($stkResponse['ResponseCode'] ?? null) !== '0' ||
+                empty($stkResponse['CheckoutRequestID']) ||
+                empty($stkResponse['MerchantRequestID'])
+            ) {
+                $this->logService->error(
+                    'mpesa',
+                    'STK push rejected by Safaricom',
+                    ['response' => $stkResponse],
+                    $clientId,
+                    $ip
+                );
+                return null;
+            }
+
+            // ------------------------------------------------------------------
+            // 6. Save pending transaction (REAL STK ONLY)
+            // ------------------------------------------------------------------
+            $checkoutRequestId = $stkResponse['CheckoutRequestID'];
+
+            $this->transactionModel->insert([
+                'client_id'           => $clientId,
+                'package_id'          => $packageId,
+                'merchant_request_id' => $stkResponse['MerchantRequestID'],
+                'checkout_request_id' => $checkoutRequestId,
+                'amount'              => $amount,
+                'phone_number'        => $phone,
+                'status'              => 'Pending',
+                'created_at'          => date('Y-m-d H:i:s'),
             ]);
-            $this->logService->error(
+
+            $this->logService->info(
                 'mpesa',
-                'Exception in initiateTransaction.',
-                ['clientId' => $clientId, 'packageId' => $packageId, 'error' => $e->getMessage()],
+                'STK push successfully initiated',
+                [
+                    'checkout_request_id' => $checkoutRequestId,
+                    'amount'              => $amount,
+                    'phone'               => $phone
+                ],
                 $clientId,
                 $ip
             );
-            return $this->createFallbackTransaction($clientId, $packageId, $amount, $phone);
+
+            // ------------------------------------------------------------------
+            // 7. RETURN REAL CheckoutRequestID ONLY
+            // ------------------------------------------------------------------
+            return $checkoutRequestId;
+        } catch (\Throwable $e) {
+            $this->logService->error(
+                'mpesa',
+                'Exception during STK initiation',
+                ['error' => $e->getMessage()],
+                $clientId,
+                $ip
+            );
+
+            return null;
         }
     }
 
@@ -369,72 +444,6 @@ class MpesaService
             return null;
         }
     }
-
-    private function createFallbackTransaction(int $clientId, int $packageId, float $amount, string $phone, ?array $package = null): ?string
-    {
-        $ip = $this->request->getIPAddress();
-        try {
-            if (!$package) {
-                $package = $this->packageModel->find($packageId);
-            }
-
-            $insert = [
-                'client_id' => $clientId,
-                'package_id' => $packageId,
-                'transaction_id' => 'TEMP_' . substr(md5(microtime()), 0, 8),
-                'merchant_request_id' => 'N/A',
-                'checkout_request_id' => 'N/A',
-                'amount' => $amount,
-                'phone_number' => $phone,
-                'status' => 'Pending',
-                'created_at' => date('Y-m-d H:i:s'),
-            ];
-
-            $this->transactionModel->insert($insert);
-            $transactionId = $this->transactionModel->getInsertID();
-
-            if ($package) {
-                $startDate = date('Y-m-d H:i:s');
-                $expiresOn = $this->calculateSubscriptionExpiry($package, $startDate);
-
-                $subscriptionModel = new \App\Models\SubscriptionModel();
-                $subscriptionModel->insert([
-                    'client_id' => $clientId,
-                    'package_id' => $packageId,
-                    'payment_id' => null,
-                    'start_date' => $startDate,
-                    'expires_on' => $expiresOn,
-                    'status' => 'pending'
-                ]);
-
-                $this->logger->info("Created fallback subscription with correct expiry", [
-                    'client_id' => $clientId,
-                    'package_id' => $packageId,
-                    'expires_on' => $expiresOn
-                ]);
-                $this->logService->info(
-                    'mpesa',
-                    'Created fallback subscription with correct expiry.',
-                    ['clientId' => $clientId, 'packageId' => $packageId, 'phone' => $phone, 'expires_on' => $expiresOn],
-                    $clientId,
-                    $ip
-                );
-            }
-
-            return $transactionId;
-        } catch (\Throwable $e) {
-            $this->logger->error("Failed to create fallback transaction", ['exception' => $e->getMessage()]);
-            $this->logService->error(
-                'mpesa',
-                'Failed to create fallback transaction.',
-                ['clientId' => $clientId, 'packageId' => $packageId, 'phone' => $phone, 'error' => $e->getMessage()],
-                $clientId,
-                $ip
-            );
-            return null;
-        }
-    }
-
 
     private function calculateSubscriptionExpiry(array $package, ?string $startDate = null): string
     {

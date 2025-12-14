@@ -222,7 +222,9 @@ class Payments extends BaseController
                     $clientId,
                     $ip
                 );
-                throw new \Exception("Failed to initiate M-PESA transaction.");
+                return redirect()
+                    ->back()
+                    ->with('error', 'STK push was not sent. Please try again.');
             }
 
             mpesa_debug("✅ M-PESA transaction initiated — checkoutRequestId: {$checkoutRequestId}");
