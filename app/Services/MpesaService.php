@@ -39,141 +39,164 @@ class MpesaService
     // PUBLIC METHODS
     // ------------------------------------------------------------------------
 
-    public function initiateTransaction(
-        int $clientId,
-        int $packageId,
-        float $amount,
-        string $phone
-    ): ?string {
-        $ip = $this->request->getIPAddress();
+    /**
+     * Initiates STK push and saves pending transaction
+     */
+    public function initiateTransaction(int $clientId, int $packageId, float $amount, string $phone): ?string
+    {
+        helper(['mpesa_debug']);
+        mpesa_debug("💡 Initiating M-PESA STK Push for client {$clientId}, package {$packageId}, amount {$amount}, phone {$phone}");
 
         try {
-            // ------------------------------------------------------------------
-            // 1. Validate client & package
-            // ------------------------------------------------------------------
-            $client  = $this->clientModel->find($clientId);
+            // --- Fetch client & package ---
+            $client = $this->clientModel->find($clientId);
             $package = $this->packageModel->find($packageId);
 
             if (!$client || !$package) {
-                $this->logService->error(
-                    'mpesa',
-                    'Client or package not found before STK initiation',
-                    compact('clientId', 'packageId'),
-                    $clientId,
-                    $ip
-                );
+                mpesa_debug("❌ Client or package not found");
                 return null;
             }
 
-            // ------------------------------------------------------------------
-            // 2. Normalize & validate phone (CRITICAL)
-            // ------------------------------------------------------------------
-            $phone = preg_replace('/\D/', '', $phone);
+            // --- Build payload ---
+            $payload = $this->buildStkPayload($client, $package, $amount, $phone);
+            mpesa_debug("Payload prepared: " . json_encode($payload));
 
-            if (str_starts_with($phone, '0')) {
-                $phone = '254' . substr($phone, 1);
-            }
-
-            if (!preg_match('/^2547\d{8}$/', $phone)) {
-                $this->logService->error(
-                    'mpesa',
-                    'Invalid phone format for STK push',
-                    ['phone' => $phone],
-                    $clientId,
-                    $ip
-                );
-                return null;
-            }
-
-            // ------------------------------------------------------------------
-            // 3. Get access token (NO FALLBACK PRETENDING)
-            // ------------------------------------------------------------------
-            $accessToken = $this->requestAccessToken();
+            // --- Get OAuth token ---
+            $accessToken = $this->getAccessToken();
             if (!$accessToken) {
-                $this->logService->error(
-                    'mpesa',
-                    'Failed to obtain M-PESA access token',
-                    null,
-                    $clientId,
-                    $ip
-                );
+                mpesa_debug("❌ Failed to obtain access token");
+                $this->logger->error("Failed to obtain access token", [
+                    'client_id' => $clientId,
+                    'package_id' => $packageId
+                ]);
+                return null;
+            }
+            mpesa_debug("✅ Access token obtained: " . substr($accessToken, 0, 10) . "...");
+
+            // --- Send STK Push ---
+            $response = $this->sendStkPush($accessToken, $payload);
+            if ($response === null) {
+                mpesa_debug("❌ STK push request failed (null response)");
                 return null;
             }
 
-            // ------------------------------------------------------------------
-            // 4. Build & send STK push
-            // ------------------------------------------------------------------
-            $payload     = $this->buildStkPayload($client, $package, $amount, $phone);
-            $stkResponse = $this->sendStkPush($accessToken, $payload);
+            mpesa_debug("STK Push raw response: " . json_encode($response));
 
-            $this->logService->debug(
-                'mpesa',
-                'Raw STK response received',
-                ['response' => $stkResponse],
-                $clientId,
-                $ip
-            );
-
-            // ------------------------------------------------------------------
-            // 5. STRICT success validation (THIS WAS MISSING)
-            // ------------------------------------------------------------------
-            if (
-                !is_array($stkResponse) ||
-                ($stkResponse['ResponseCode'] ?? null) !== '0' ||
-                empty($stkResponse['CheckoutRequestID']) ||
-                empty($stkResponse['MerchantRequestID'])
-            ) {
-                $this->logService->error(
-                    'mpesa',
-                    'STK push rejected by Safaricom',
-                    ['response' => $stkResponse],
-                    $clientId,
-                    $ip
-                );
+            if (!isset($response['CheckoutRequestID'])) {
+                mpesa_debug("❌ STK push failed, missing CheckoutRequestID: " . json_encode($response));
+                $this->logger->error("STK push failed", ['response' => $response]);
                 return null;
             }
 
-            // ------------------------------------------------------------------
-            // 6. Save pending transaction (REAL STK ONLY)
-            // ------------------------------------------------------------------
-            $checkoutRequestId = $stkResponse['CheckoutRequestID'];
+            $checkoutRequestId = $response['CheckoutRequestID'];
+            mpesa_debug("✅ STK push sent successfully. CheckoutRequestID: {$checkoutRequestId}");
 
+            // --- Save pending transaction ---
             $this->transactionModel->insert([
-                'client_id'           => $clientId,
-                'package_id'          => $packageId,
-                'merchant_request_id' => $stkResponse['MerchantRequestID'],
+                'client_id' => $clientId,
+                'package_id' => $packageId,
+                'amount' => $amount,
                 'checkout_request_id' => $checkoutRequestId,
-                'amount'              => $amount,
-                'phone_number'        => $phone,
-                'status'              => 'Pending',
-                'created_at'          => date('Y-m-d H:i:s'),
+                'status' => 'Pending',
+                'created_at' => date('Y-m-d H:i:s'),
             ]);
 
-            $this->logService->info(
-                'mpesa',
-                'STK push successfully initiated',
-                [
-                    'checkout_request_id' => $checkoutRequestId,
-                    'amount'              => $amount,
-                    'phone'               => $phone
-                ],
-                $clientId,
-                $ip
-            );
+            mpesa_debug("Pending transaction saved. ID: " . $this->transactionModel->getInsertID());
 
-            // ------------------------------------------------------------------
-            // 7. RETURN REAL CheckoutRequestID ONLY
-            // ------------------------------------------------------------------
             return $checkoutRequestId;
         } catch (\Throwable $e) {
-            $this->logService->error(
-                'mpesa',
-                'Exception during STK initiation',
-                ['error' => $e->getMessage()],
-                $clientId,
-                $ip
-            );
+            mpesa_debug("❌ Exception during STK push: " . $e->getMessage());
+            $this->logger->error("Exception during initiateTransaction", [
+                'exception' => $e->getMessage(),
+                'client_id' => $clientId,
+                'package_id' => $packageId
+            ]);
+            return null;
+        }
+    }
 
+    /**
+     * Returns a valid access token
+     */
+    public function getAccessToken(): ?string
+    {
+        return $this->requestAccessToken();
+    }
+
+    /**
+     * Sends actual STK push to Safaricom
+     */
+    private function sendStkPush(string $accessToken, array $payload): ?array
+    {
+        $ip = $this->request->getIPAddress();
+        try {
+            $ch = curl_init();
+            curl_setopt($ch, CURLOPT_URL, getenv('MPESA_STK_URL'));
+            curl_setopt($ch, CURLOPT_HTTPHEADER, [
+                "Content-Type: application/json",
+                "Authorization: Bearer $accessToken"
+            ]);
+            curl_setopt($ch, CURLOPT_POST, true);
+            curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($payload));
+            curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+            $response = curl_exec($ch);
+            curl_close($ch);
+
+            return json_decode($response, true);
+        } catch (\Throwable $e) {
+            $this->logger->error("Exception sending STK Push", ['exception' => $e->getMessage()]);
+            $this->logService->error('mpesa', 'Exception sending STK Push', ['error' => $e->getMessage()], null, $ip);
+            return null;
+        }
+    }
+
+    /**
+     * Helper to build STK payload
+     */
+    private function buildStkPayload(array $client, array $package, float $amount, string $phone): array
+    {
+        $BusinessShortCode = getenv('MPESA_SHORTCODE');
+        $Passkey = getenv('MPESA_PASSKEY');
+        $Timestamp = date('YmdHis');
+        $Password = base64_encode($BusinessShortCode . $Passkey . $Timestamp);
+
+        return [
+            'BusinessShortCode' => $BusinessShortCode,
+            'Password'          => $Password,
+            'Timestamp'         => $Timestamp,
+            'TransactionType'   => 'CustomerPayBillOnline',
+            'Amount'            => $amount,
+            'PartyA'            => $phone,
+            'PartyB'            => $BusinessShortCode,
+            'PhoneNumber'       => $phone,
+            'CallBackURL'       => getenv('MPESA_CALLBACK_URL'),
+            'AccountReference'  => 'Hotspot_' . ($client['username'] ?? $client['id']),
+            'TransactionDesc'   => 'Payment for ' . ($package['name'] ?? $package['id'])
+        ];
+    }
+
+    /**
+     * Request OAuth token
+     */
+    private function requestAccessToken(): ?string
+    {
+        $ip = $this->request->getIPAddress();
+        try {
+            $consumerKey = getenv('MPESA_CONSUMER_KEY');
+            $consumerSecret = getenv('MPESA_CONSUMER_SECRET');
+            $credentials = base64_encode("$consumerKey:$consumerSecret");
+
+            $ch = curl_init();
+            curl_setopt($ch, CURLOPT_URL, getenv('MPESA_OAUTH_URL'));
+            curl_setopt($ch, CURLOPT_HTTPHEADER, ["Authorization: Basic $credentials"]);
+            curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+            $response = curl_exec($ch);
+            curl_close($ch);
+
+            $tokenResult = json_decode($response, true);
+            return $tokenResult['access_token'] ?? null;
+        } catch (\Throwable $e) {
+            $this->logger->error("Exception requesting access token", ['exception' => $e->getMessage()]);
             return null;
         }
     }
@@ -394,100 +417,6 @@ class MpesaService
                 $ip
             );
             return ['success' => false, 'message' => 'Internal error occurred.'];
-        }
-    }
-
-    private function requestAccessToken(): ?string
-    {
-        $ip = $this->request->getIPAddress();
-        try {
-            $consumerKey = getenv('MPESA_CONSUMER_KEY');
-            $consumerSecret = getenv('MPESA_CONSUMER_SECRET');
-            $credentials = base64_encode("$consumerKey:$consumerSecret");
-
-            $ch = curl_init();
-            curl_setopt($ch, CURLOPT_URL, getenv('MPESA_OAUTH_URL'));
-            curl_setopt($ch, CURLOPT_HTTPHEADER, ["Authorization: Basic $credentials"]);
-            curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-            $response = curl_exec($ch);
-            curl_close($ch);
-
-            $tokenResult = json_decode($response, true);
-            if (!is_array($tokenResult) || empty($tokenResult['access_token'])) {
-                $this->logger->error("Failed to obtain M-PESA access token", $tokenResult ?? $response);
-                $this->logService->error(
-                    'mpesa',
-                    'Failed to obtain M-PESA access token',
-                    null,
-                    null,
-                    $ip
-                );
-                return null;
-            }
-
-            return $tokenResult['access_token'];
-        } catch (\Throwable $e) {
-            $this->logger->error("Exception requesting access token", ['exception' => $e->getMessage()]);
-            $this->logService->error(
-                'mpesa',
-                'Exception requesting access token',
-                ['error' => $e->getMessage()],
-                null,
-                $ip
-            );
-            return null;
-        }
-    }
-
-    private function buildStkPayload(array $client, array $package, float $amount, string $phone): array
-    {
-        $BusinessShortCode = getenv('MPESA_SHORTCODE');
-        $Passkey = getenv('MPESA_PASSKEY');
-        $Timestamp = date('YmdHis');
-        $Password = base64_encode($BusinessShortCode . $Passkey . $Timestamp);
-
-        return [
-            'BusinessShortCode' => $BusinessShortCode,
-            'Password'          => $Password,
-            'Timestamp'         => $Timestamp,
-            'TransactionType'   => 'CustomerPayBillOnline',
-            'Amount'            => $amount,
-            'PartyA'            => $phone,
-            'PartyB'            => $BusinessShortCode,
-            'PhoneNumber'       => $phone,
-            'CallBackURL'       => getenv('MPESA_CALLBACK_URL'),
-            'AccountReference'  => 'Hotspot_' . ($client['username'] ?? $client['id']),
-            'TransactionDesc'   => 'Payment for ' . ($package['name'] ?? $package['id'])
-        ];
-    }
-
-    private function sendStkPush(string $accessToken, array $payload): ?array
-    {
-        $ip = $this->request->getIPAddress();
-        try {
-            $ch = curl_init();
-            curl_setopt($ch, CURLOPT_URL, getenv('MPESA_STK_URL'));
-            curl_setopt($ch, CURLOPT_HTTPHEADER, [
-                "Content-Type: application/json",
-                "Authorization: Bearer $accessToken"
-            ]);
-            curl_setopt($ch, CURLOPT_POST, true);
-            curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($payload));
-            curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-            $response = curl_exec($ch);
-            curl_close($ch);
-
-            return json_decode($response, true);
-        } catch (\Throwable $e) {
-            $this->logger->error("Exception sending STK Push", ['exception' => $e->getMessage()]);
-            $this->logService->error(
-                'mpesa',
-                'Exception sending STK Push',
-                ['error' => $e->getMessage()],
-                null,
-                $ip
-            );
-            return null;
         }
     }
 
