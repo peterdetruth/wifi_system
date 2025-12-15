@@ -85,15 +85,12 @@ class Payments extends BaseController
         $voucherCode = trim($postData['voucher_code'] ?? '');
         $phone       = trim($postData['phone'] ?? '');
 
-        mpesa_debug("Parsed POST values - package_id: {$packageId}, voucher_code: '{$voucherCode}', phone: '{$phone}'");
-
         $package = $this->packageModel->find($packageId);
         if (!$package) {
             mpesa_debug("❌ Package not found: {$packageId}");
             $this->logService->warning('mpesa', 'Package not found during payment process', ['packageId' => $packageId, 'username' => $username], $clientId, $ip);
             return redirect()->to('/client/packages')->with('error', 'Package not found.');
         }
-        mpesa_debug("✅ Package found: {$package['name']} ({$package['id']})");
 
         $client = $this->clientModel->find($clientId);
         $phone = $phone ?: ($client['phone'] ?? '');
@@ -108,9 +105,8 @@ class Payments extends BaseController
                 return redirect()->back()->withInput()->with('error', 'Invalid or expired voucher code.');
             }
 
-            mpesa_debug("✅ Voucher valid: {$voucherCode}");
             try {
-                $subData = $this->createSubscription($clientId, $packageId, 0);
+                $subId = $this->createSubscription($clientId, $packageId, 0);
                 $this->voucherModel->markAsUsed($voucherCode, $clientId);
                 $syncResult = $this->provisionRouter($client, $package);
 
@@ -128,14 +124,11 @@ class Payments extends BaseController
 
         // --- M-PESA payment ---
         $amount = (float)$package['price'];
-        mpesa_debug("Payment amount: {$amount}");
         if ($amount <= 0) {
-            mpesa_debug("❌ Invalid payment amount: {$amount}");
             return redirect()->back()->with('error', 'Invalid payment amount.');
         }
 
         try {
-            // --- Check existing pending transaction ---
             $existingPending = $this->mpesaTransactionModel
                 ->where('client_id', $clientId)
                 ->where('package_id', $packageId)
@@ -144,22 +137,17 @@ class Payments extends BaseController
                 ->first();
 
             if ($existingPending) {
-                mpesa_debug("ℹ️ Existing pending transaction found, redirecting to waiting: {$existingPending['checkout_request_id']}");
                 return redirect()->to('/client/payments/waiting/' . ($existingPending['checkout_request_id'] ?? ''));
             }
 
-            mpesa_debug("No existing pending transaction, initiating STK push...");
             $checkoutRequestId = $this->mpesaService->initiateTransaction($clientId, $packageId, $amount, $phone);
 
             if (!$checkoutRequestId) {
-                mpesa_debug("❌ STK push initiation failed for client {$clientId}");
                 return redirect()->back()->with('error', 'STK push was not sent. Please try again.');
             }
 
-            mpesa_debug("✅ STK push initiated successfully, checkoutRequestId: {$checkoutRequestId}");
             return redirect()->to('/client/payments/waiting/' . $checkoutRequestId);
         } catch (\Throwable $e) {
-            mpesa_debug("❌ Exception during payment process: " . $e->getMessage());
             return redirect()->back()->with('error', 'Failed to initiate payment: ' . $e->getMessage());
         }
     }
