@@ -108,7 +108,8 @@ class Payments extends BaseController
             try {
                 $subId = $this->createSubscription($clientId, $packageId, 0);
                 $this->voucherModel->markAsUsed($voucherCode, $clientId);
-                $syncResult = $this->provisionRouter($client, $package);
+                // We do not need this $syncResult variable but keeping it for future use if needed
+                $syncResult = '';
 
                 return view('client/payments/success', [
                     'transaction' => ['id' => 0, 'voucher' => $voucherCode],
@@ -184,7 +185,8 @@ class Payments extends BaseController
 
         $package = $this->packageModel->find($subscription['package_id']);
         $client = $this->clientModel->find($clientId);
-        $syncResult = $this->provisionRouter($client, $package);
+        // We do not need this $syncResult variable but keeping it for future use if needed
+        $syncResult = '';
 
         $this->logService->debug(
             'mpesa',
