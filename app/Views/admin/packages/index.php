@@ -13,6 +13,7 @@
       <tr>
         <th>#</th>
         <th>Package Name</th>
+        <th>Router Profile</th>
         <th>Type</th>
         <th>Bandwidth</th>
         <th>Duration</th>
@@ -27,6 +28,7 @@
         <tr>
           <td><?= $index + 1 ?></td>
           <td><?= esc($package['name']) ?></td>
+          <td><?= esc($package['router_profile']) ?></td>
           <td><?= esc($package['type']) ?></td>
           <td><?= esc($package['bandwidth_value']) . ' ' . esc($package['bandwidth_unit']) ?></td>
           <td><?= esc($package['duration_length']) . ' ' . esc($package['duration_unit']) ?></td>
