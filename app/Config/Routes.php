@@ -40,7 +40,7 @@ $routes->group('admin', ['filter' => 'auth', 'namespace' => 'App\Controllers'], 
         $routes->post('store', 'Packages::store');
         $routes->get('edit/(:num)', 'Packages::edit/$1');
         $routes->post('update/(:num)', 'Packages::update/$1');
-        $routes->post('delete/(:num)', 'Packages::delete/$1');
+        $routes->get('delete/(:num)', 'Packages::delete/$1');
     });
 
     // 👥 Clients
