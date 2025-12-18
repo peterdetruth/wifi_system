@@ -134,11 +134,16 @@ class Packages extends BaseController
             } else {
                 // If burst not enabled, set all burst fields to NULL
                 $burstFields = [
-                    'upload_burst_rate_value', 'upload_burst_rate_unit',
-                    'download_burst_rate_value', 'download_burst_rate_unit',
-                    'upload_burst_threshold_value', 'upload_burst_threshold_unit',
-                    'download_burst_threshold_value', 'download_burst_threshold_unit',
-                    'upload_burst_time', 'download_burst_time'
+                    'upload_burst_rate_value',
+                    'upload_burst_rate_unit',
+                    'download_burst_rate_value',
+                    'download_burst_rate_unit',
+                    'upload_burst_threshold_value',
+                    'upload_burst_threshold_unit',
+                    'download_burst_threshold_value',
+                    'download_burst_threshold_unit',
+                    'upload_burst_time',
+                    'download_burst_time'
                 ];
                 foreach ($burstFields as $field) {
                     $data[$field] = null;
@@ -149,6 +154,8 @@ class Packages extends BaseController
             $unit = $this->request->getPost('duration_unit');
 
             $data['validity_days'] = $this->calculateValidityDays($length, $unit);
+            // ✅ Auto-generate router profile
+            $data['router_profile'] = $this->generateRouterProfile($data);
 
             if ($this->packageModel->save($data)) {
                 return redirect()->to('/admin/packages')->with('success', 'Package created successfully.');
@@ -156,7 +163,6 @@ class Packages extends BaseController
 
             $dbError = $this->packageModel->errors() ?: Database::connect()->error();
             return redirect()->back()->withInput()->with('error', 'Failed to create package: ' . print_r($dbError, true));
-
         } catch (\Exception $e) {
             return redirect()->back()->withInput()->with('error', 'Error: ' . $e->getMessage());
         }
@@ -193,6 +199,11 @@ class Packages extends BaseController
     {
         $this->requireLoginRedirect();
 
+        $existing = $this->packageModel->find($id);
+        if (!$existing) {
+            return redirect()->back()->with('error', 'Package not found.');
+        }
+
         try {
             $data = [
                 'name'             => $this->request->getPost('name'),
@@ -224,29 +235,44 @@ class Packages extends BaseController
                 ]);
             } else {
                 $burstFields = [
-                    'upload_burst_rate_value', 'upload_burst_rate_unit',
-                    'download_burst_rate_value', 'download_burst_rate_unit',
-                    'upload_burst_threshold_value', 'upload_burst_threshold_unit',
-                    'download_burst_threshold_value', 'download_burst_threshold_unit',
-                    'upload_burst_time', 'download_burst_time'
+                    'upload_burst_rate_value',
+                    'upload_burst_rate_unit',
+                    'download_burst_rate_value',
+                    'download_burst_rate_unit',
+                    'upload_burst_threshold_value',
+                    'upload_burst_threshold_unit',
+                    'download_burst_threshold_value',
+                    'download_burst_threshold_unit',
+                    'upload_burst_time',
+                    'download_burst_time'
                 ];
                 foreach ($burstFields as $field) {
                     $data[$field] = null;
                 }
             }
 
-            if ($this->packageModel->update($id, $data)) {
-                return redirect()->to('/admin/packages')->with('success', 'Package updated successfully.');
-            }
-
             $length = $this->request->getPost('duration_length');
             $unit = $this->request->getPost('duration_unit');
 
             $data['validity_days'] = $this->calculateValidityDays($length, $unit);
+            
+            $profileInputsChanged =
+                $existing['type'] !== $data['type'] ||
+                $existing['account_type'] !== $data['account_type'] ||
+                (float)$existing['bandwidth_value'] !== (float)$data['bandwidth_value'] ||
+                $existing['bandwidth_unit'] !== $data['bandwidth_unit'];
+
+            if ($profileInputsChanged) {
+                $data['router_profile'] = $this->generateRouterProfile($data);
+            }
+
+            if ($this->packageModel->update($id, $data)) {
+                return redirect()->to('/admin/packages')->with('success', 'Package updated successfully.');
+            }
+
 
             $dbError = $this->packageModel->errors() ?: Database::connect()->error();
             return redirect()->back()->withInput()->with('error', 'Failed to update package: ' . print_r($dbError, true));
-
         } catch (\Exception $e) {
             return redirect()->back()->withInput()->with('error', 'Error: ' . $e->getMessage());
         }
@@ -266,9 +292,20 @@ class Packages extends BaseController
 
             $dbError = Database::connect()->error();
             return redirect()->to('/admin/packages')->with('error', 'Failed to delete package: ' . print_r($dbError, true));
-
         } catch (\Exception $e) {
             return redirect()->to('/admin/packages')->with('error', 'Error: ' . $e->getMessage());
         }
+    }
+
+    private function generateRouterProfile(array $data): string
+    {
+        $type = strtoupper($data['type']); // hotspot → HOTSPOT
+        $account = strtoupper($data['account_type']); // personal → PERSONAL
+
+        // Normalize bandwidth
+        $speed = (int) $data['bandwidth_value'];
+        $unit = strtoupper(substr($data['bandwidth_unit'], 0, 1)); // Mbps → M, Kbps → K
+
+        return "{$type}_{$speed}{$unit}_{$account}";
     }
 }
