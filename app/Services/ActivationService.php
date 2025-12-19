@@ -7,44 +7,64 @@ use Config\Database;
 class ActivationService
 {
     protected MpesaLogger $logger;
+    protected LogService $logService;
     protected $db;
 
-    public function __construct(?MpesaLogger $logger = null)
-    {
+    public function __construct(
+        ?MpesaLogger $logger = null,
+        ?LogService $logService = null
+    ) {
         $this->logger = $logger ?? new MpesaLogger();
+        $this->logService = $logService ?? new LogService();
         $this->db = Database::connect();
     }
 
     /**
-     * Activate a subscription for a client after payment.
-     * Optionally creates a subscription record (can be disabled if subscriptions are managed separately).
-     *
-     * @param int $clientId
-     * @param int $packageId
-     * @param int|null $paymentId
-     * @param bool $createSubscription
-     * @return bool
+     * Activate a client after payment.
+     * Queues router provisioning (no router calls here).
      */
-    public function activate(int $clientId, int $packageId, ?int $paymentId = null, bool $createSubscription = false): bool
-    {
+    public function activate(
+        int $clientId,
+        int $packageId,
+        ?int $paymentId = null,
+        bool $createSubscription = false
+    ): bool {
         $db = $this->db;
         $db->transStart();
 
         try {
+            /* ===============================
+             * Fetch package
+             * =============================== */
             $package = $db->table('packages')->where('id', $packageId)->get()->getRowArray();
+
             if (!$package) {
-                $this->logger->error("Package not found during activation", ['packageId' => $packageId]);
+                $this->logger->error('Package not found during activation', [
+                    'package_id' => $packageId
+                ]);
+
+                $this->logService->error(
+                    'Router',
+                    'Package not found during activation',
+                    ['package_id' => $packageId],
+                    $clientId
+                );
+
                 $db->transRollback();
                 return false;
             }
 
-            $startDate = date('Y-m-d H:i:s');
-            $expiresOn = date('Y-m-d H:i:s', strtotime("+{$package['duration_length']} {$package['duration_unit']}"));
-
-            $subscriptionId = null;
+            /* ===============================
+             * Optional subscription creation
+             * =============================== */
             if ($createSubscription) {
-                // Optional subscription creation
-                $subscriptionData = [
+                $startDate = date('Y-m-d H:i:s');
+                $expiresOn = date(
+                    'Y-m-d H:i:s',
+                    strtotime("+{$package['duration_length']} {$package['duration_unit']}")
+                );
+
+                $db->table('subscriptions')->insert([
                     'client_id'  => $clientId,
                     'package_id' => $packageId,
                     'payment_id' => $paymentId,
@@ -53,50 +73,106 @@ class ActivationService
                     'end_date'   => $expiresOn,
                     'expires_on' => $expiresOn,
                     'status'     => 'active'
-                ];
+                ]);
 
-                $db->table('subscriptions')->insert($subscriptionData);
                 $subscriptionId = $db->insertID();
 
-                $this->logger->info("Created new subscription record", [
+                $this->logger->info('Subscription created', [
                     'subscription_id' => $subscriptionId,
                     'client_id' => $clientId,
-                    'package_id' => $packageId,
-                    'payment_id' => $paymentId
+                    'package_id' => $packageId
                 ]);
+
+                $this->logService->info(
+                    'Subscription',
+                    'Subscription created after payment',
+                    [
+                        'subscription_id' => $subscriptionId,
+                        'package_id' => $packageId
+                    ],
+                    $clientId
+                );
             }
 
-            // Queue router provisioning
+            /* ===============================
+             * Queue router provisioning
+             * =============================== */
             if (!empty($package['router_id'])) {
+
+                $routerUsername = $this->getRouterUsername($clientId);
+
                 $provisioningData = [
                     'client_id'       => $clientId,
                     'router_id'       => $package['router_id'],
                     'package_id'      => $packageId,
                     'service_type'    => $package['type'],
-                    'router_username' => $this->getRouterUsername($clientId),
-                    'router_password' => null, // Will be set during real provisioning
+                    'router_username' => $routerUsername,
+                    'router_password' => null,
                     'router_profile'  => $package['router_profile'],
                     'status'          => 'pending',
                     'last_error'      => null,
                 ];
 
-                $provisioningInsert = $db->table('router_provisionings')->insert($provisioningData);
-                $provisioningId = $db->insertID();
+                $existingProvisioning = $db->table('router_provisionings')
+                    ->where('router_id', $package['router_id'])
+                    ->where('router_username', $routerUsername)
+                    ->get()
+                    ->getRowArray();
 
-                if ($provisioningInsert && $provisioningId) {
-                    $this->logger->info("Router provisioning queued", [
-                        'provisioning_id' => $provisioningId,
-                        'client_id'       => $clientId,
-                        'package_id'      => $packageId,
-                        'router_id'       => $package['router_id'],
-                        'router_profile'  => $package['router_profile']
+                if ($existingProvisioning) {
+
+                    $this->logger->info('Router provisioning already exists', [
+                        'provisioning_id' => $existingProvisioning['id'],
+                        'router_id' => $package['router_id'],
+                        'router_username' => $routerUsername
                     ]);
+
+                    $this->logService->info(
+                        'Router',
+                        'Router provisioning already exists, skipping insert',
+                        [
+                            'provisioning_id' => $existingProvisioning['id'],
+                            'router_id' => $package['router_id'],
+                            'router_username' => $routerUsername
+                        ],
+                        $clientId
+                    );
                 } else {
-                    $this->logger->error("Failed to queue router provisioning", [
-                        'client_id' => $clientId,
-                        'package_id' => $packageId,
+
+                    $db->table('router_provisionings')->insert($provisioningData);
+                    $provisioningId = $db->insertID();
+
+                    if (!$provisioningId) {
+                        $error = $db->error();
+
+                        $this->logger->error('Router provisioning insert failed', $error);
+
+                        $this->logService->error(
+                            'Router',
+                            'Failed to queue router provisioning',
+                            $error,
+                            $clientId
+                        );
+
+                        $db->transRollback();
+                        return false;
+                    }
+
+                    $this->logger->info('Router provisioning queued', [
+                        'provisioning_id' => $provisioningId,
                         'router_id' => $package['router_id']
                     ]);
+
+                    $this->logService->info(
+                        'Router',
+                        'Router provisioning queued',
+                        [
+                            'provisioning_id' => $provisioningId,
+                            'router_id' => $package['router_id'],
+                            'router_profile' => $package['router_profile']
+                        ],
+                        $clientId
+                    );
                 }
             }
 
@@ -104,26 +180,37 @@ class ActivationService
             return true;
         } catch (\Throwable $e) {
             $db->transRollback();
-            $this->logger->error("Activation error", [
+
+            $this->logger->error('Activation error', [
                 'message' => $e->getMessage(),
                 'client_id' => $clientId,
                 'package_id' => $packageId,
                 'payment_id' => $paymentId
             ]);
+
+            $this->logService->error(
+                'Router',
+                'Activation failed due to exception',
+                ['exception' => $e->getMessage()],
+                $clientId
+            );
+
             return false;
         }
     }
 
     /**
-     * Generate router username based on client ID or other logic.
-     *
-     * @param int $clientId
-     * @return string
+     * Router username = client.username
      */
     protected function getRouterUsername(int $clientId): string
     {
-        // Assuming client username is used for router username
-        $client = $this->db->table('clients')->where('id', $clientId)->get()->getRowArray();
+        $client = $this->db
+            ->table('clients')
+            ->select('username')
+            ->where('id', $clientId)
+            ->get()
+            ->getRowArray();
+
         return $client['username'] ?? 'user_' . $clientId;
     }
 }
