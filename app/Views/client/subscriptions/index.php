@@ -29,12 +29,14 @@
         <tbody>
           <?php foreach ($subscriptions as $index => $sub): ?>
             <?php
-              $isExpired = strtotime($sub['expires_on']) < time();
-              $status = $isExpired ? 'Expired' : ucfirst($sub['status']);
-              $statusClass = $isExpired ? 'text-danger fw-bold' : 'text-success fw-bold';
+            $isExpired = strtotime($sub['expires_on']) < time();
+            $status = $isExpired ? 'Expired' : ucfirst($sub['status']);
+            $statusClass = $isExpired ? 'text-danger fw-bold' : 'text-success fw-bold';
+            // Correct numbering across pages
+            $rowNumber = ($pager->getCurrentPage() - 1) * $perPage + $index + 1;
             ?>
             <tr>
-              <td><?= $index + 1 ?></td>
+              <td><?= $rowNumber ?></td>
               <td><?= esc($sub['package_name'] ?? 'N/A') ?></td>
               <td><?= esc($sub['router_name'] ?? 'N/A') ?></td>
               <td><?= esc($sub['package_account_type'] ?? 'N/A') ?></td>
@@ -42,8 +44,8 @@
               <td><?= number_format($sub['price'] ?? 0, 2) ?></td>
               <td><?= date('d M Y H:i', strtotime($sub['start_date'])) ?></td>
               <td><?= date('d M Y H:i', strtotime($sub['expires_on'])) ?></td>
-              <td class="<?= strtotime($sub['expires_on']) < time() ? 'text-danger' : 'text-success' ?>">
-                  <?= esc(remaining_time($sub['expires_on'])) ?>
+              <td class="<?= $isExpired ? 'text-danger' : 'text-success' ?>">
+                <?= esc(remaining_time($sub['expires_on'])) ?>
               </td>
               <td class="<?= $statusClass ?>"><?= esc($status) ?></td>
               <td>
@@ -68,6 +70,12 @@
         </tbody>
       </table>
     </div>
+
+    <!-- Pagination -->
+    <div class="d-flex justify-content-center mt-4">
+      <?= $pager->links('default', 'bootstrap5') ?>
+    </div>
+
   <?php else: ?>
     <div class="alert alert-warning text-center">
       You have no active or past subscriptions yet.

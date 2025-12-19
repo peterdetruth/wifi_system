@@ -29,26 +29,33 @@ class Subscriptions extends BaseController
     {
         $clientId = session()->get('client_id');
 
+        $perPage = 10; // Number of subscriptions per page
+
         $subscriptions = $this->subscriptionModel
             ->select('subscriptions.*, 
-                    packages.name AS package_name, 
-                    packages.account_type AS package_account_type, 
-                    packages.type AS package_type, 
-                    packages.price AS price, 
-                    routers.name AS router_name')
+                packages.name AS package_name, 
+                packages.account_type AS package_account_type, 
+                packages.type AS package_type, 
+                packages.price AS price, 
+                routers.name AS router_name')
             ->join('packages', 'packages.id = subscriptions.package_id', 'left')
             ->join('routers', 'routers.id = subscriptions.router_id', 'left')
             ->where('subscriptions.client_id', $clientId)
             ->orderBy('subscriptions.start_date', 'DESC')
-            ->findAll();
+            ->paginate($perPage); // <- Use paginate instead of findAll
+
+        $pager = $this->subscriptionModel->pager;
 
         $data = [
             'title' => 'My Subscriptions',
-            'subscriptions' => $subscriptions
+            'subscriptions' => $subscriptions,
+            'pager' => $pager,
+            'perPage' => $perPage
         ];
 
         return view('client/subscriptions/index', $data);
     }
+
 
     /**
      * View single subscription details
