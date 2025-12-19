@@ -29,32 +29,51 @@ class Subscriptions extends BaseController
     {
         $clientId = session()->get('client_id');
 
-        $perPage = 10; // Number of subscriptions per page
+        // Pagination
+        $perPage = 10;
+
+        // Sorting (with whitelist)
+        $allowedSorts = [
+            'package_name' => 'packages.name',
+            'status'       => 'subscriptions.status',
+            'expires_on'   => 'subscriptions.expires_on',
+        ];
+
+        $sort  = $this->request->getGet('sort') ?? 'expires_on';
+        $order = strtolower($this->request->getGet('order') ?? 'desc');
+
+        if (!isset($allowedSorts[$sort])) {
+            $sort = 'expires_on';
+        }
+
+        if (!in_array($order, ['asc', 'desc'])) {
+            $order = 'desc';
+        }
 
         $subscriptions = $this->subscriptionModel
             ->select('subscriptions.*, 
-                packages.name AS package_name, 
-                packages.account_type AS package_account_type, 
-                packages.type AS package_type, 
-                packages.price AS price, 
-                routers.name AS router_name')
+            packages.name AS package_name, 
+            packages.account_type AS package_account_type, 
+            packages.type AS package_type, 
+            packages.price AS price, 
+            routers.name AS router_name')
             ->join('packages', 'packages.id = subscriptions.package_id', 'left')
             ->join('routers', 'routers.id = subscriptions.router_id', 'left')
             ->where('subscriptions.client_id', $clientId)
-            ->orderBy('subscriptions.start_date', 'DESC')
-            ->paginate($perPage); // <- Use paginate instead of findAll
-
-        $pager = $this->subscriptionModel->pager;
+            ->orderBy($allowedSorts[$sort], $order)
+            ->paginate($perPage);
 
         $data = [
-            'title' => 'My Subscriptions',
+            'title'         => 'My Subscriptions',
             'subscriptions' => $subscriptions,
-            'pager' => $pager,
-            'perPage' => $perPage
+            'pager'         => $this->subscriptionModel->pager,
+            'sort'          => $sort,
+            'order'         => $order,
         ];
 
         return view('client/subscriptions/index', $data);
     }
+
 
 
     /**

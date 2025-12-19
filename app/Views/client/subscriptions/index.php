@@ -8,21 +8,48 @@
 
   <?= view('templates/alerts') ?>
 
+  <?php
+  /**
+   * Generate sortable column links
+   */
+  function sort_link(string $label, string $field, string $currentSort, string $currentOrder)
+  {
+    $order = ($currentSort === $field && $currentOrder === 'asc') ? 'desc' : 'asc';
+    $icon  = '';
+
+    if ($currentSort === $field) {
+      $icon = $currentOrder === 'asc'
+        ? ' <i class="bi bi-arrow-up"></i>'
+        : ' <i class="bi bi-arrow-down"></i>';
+    }
+
+    $query = array_merge($_GET, [
+      'sort'  => $field,
+      'order' => $order,
+    ]);
+
+    $url = current_url() . '?' . http_build_query($query);
+
+    return '<a href="' . esc($url) . '" class="text-white text-decoration-none">'
+      . esc($label) . $icon . '</a>';
+  }
+  ?>
+
   <?php if (!empty($subscriptions)): ?>
     <div class="table-responsive">
       <table class="table table-striped align-middle">
         <thead class="table-dark">
           <tr>
             <th>#</th>
-            <th>Package</th>
+            <th><?= sort_link('Package', 'package_name', $sort, $order) ?></th>
             <th>Router</th>
             <th>Account Type</th>
             <th>Package Type</th>
             <th>Price (Ksh)</th>
             <th>Start Date</th>
-            <th>Expiry Date</th>
+            <th><?= sort_link('Expiry Date', 'expires_on', $sort, $order) ?></th>
             <th>Validity</th>
-            <th>Status</th>
+            <th><?= sort_link('Status', 'status', $sort, $order) ?></th>
             <th>Actions</th>
           </tr>
         </thead>
@@ -32,11 +59,9 @@
             $isExpired = strtotime($sub['expires_on']) < time();
             $status = $isExpired ? 'Expired' : ucfirst($sub['status']);
             $statusClass = $isExpired ? 'text-danger fw-bold' : 'text-success fw-bold';
-            // Correct numbering across pages
-            $rowNumber = ($pager->getCurrentPage() - 1) * $perPage + $index + 1;
             ?>
             <tr>
-              <td><?= $rowNumber ?></td>
+              <td><?= $index + 1 ?></td>
               <td><?= esc($sub['package_name'] ?? 'N/A') ?></td>
               <td><?= esc($sub['router_name'] ?? 'N/A') ?></td>
               <td><?= esc($sub['package_account_type'] ?? 'N/A') ?></td>
