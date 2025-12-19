@@ -471,4 +471,33 @@ CREATE TABLE system_logs (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
+INSERT INTO router_provisionings (
+    client_id,
+    router_id,
+    package_id,
+    service_type,
+    router_username,
+    router_password,
+    router_profile,
+    status,
+    attempts,
+    locked_at,
+    last_error,
+    created_at
+) VALUES (
+    8,                 -- client_id (use existing client)
+    7,                 -- router_id (existing router)
+    31,                -- package_id
+    'hotspot',         -- service_type
+    'PeterMalaba',     -- MUST match client.username
+    NULL,              -- password will be set later
+    'HOTSPOT_20M_PERSONAL',
+    'pending',
+    0,
+    NULL,
+    NULL,
+    NOW()
+);
+
+
 

@@ -186,3 +186,4 @@ $routes->post('reconnect-mpesa', 'Home::reconnectMpesa');
 // ==============================
 $routes->get('test/envcheck', 'Test::envcheck');
 $routes->get('test-sms', 'Mpesa::testSms');
+$routes->get('/test/provision', 'TestProvisioning::run');
