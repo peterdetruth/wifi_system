@@ -80,6 +80,74 @@
     </div>
 </div>
 
+<div class="mb-4">
+    <h5>Connect with Username & Password</h5>
+
+    <form method="POST" action="<?= base_url('/admin/clients/create-activation/' . $client['id']) ?>" class="row g-3">
+        <?= csrf_field() ?>
+
+        <div class="col-md-6">
+            <label class="form-label">Select Package</label>
+            <select name="package_id" class="form-select" required>
+                <option value="">-- Choose Package --</option>
+                <?php foreach ($db->table('packages')->get()->getResultArray() as $pkg): ?>
+                    <option value="<?= esc($pkg['id']) ?>"><?= esc($pkg['name']) ?></option>
+                <?php endforeach; ?>
+            </select>
+        </div>
+
+        <div class="col-md-12">
+            <button type="submit" class="btn btn-primary">
+                Generate Username & Password
+            </button>
+        </div>
+    </form>
+</div>
+
+<div class="mb-4">
+    <h5>Username & Password Connections</h5>
+
+    <?php if (empty($credentials)): ?>
+        <div class="alert alert-info">No activation credentials created yet.</div>
+    <?php else: ?>
+        <div class="table-responsive">
+            <table class="table table-bordered table-striped">
+                <thead class="table-dark">
+                    <tr>
+                        <th>Username</th>
+                        <th>Package</th>
+                        <th>Status</th>
+                        <th>Created At</th>
+                        <th>Start Date</th>
+                        <th>Expires On</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <?php foreach ($credentials as $cred): ?>
+                        <tr>
+                            <td><?= esc($cred['username']) ?></td>
+                            <td><?= esc($cred['package_name']) ?></td>
+                            <td>
+                                <?php if ($cred['status'] === 'used'): ?>
+                                    <span class="badge bg-success">Used</span>
+                                <?php else: ?>
+                                    <span class="badge bg-warning text-dark">Unused</span>
+                                <?php endif; ?>
+                            </td>
+                            <td><?= date('d M Y H:i', strtotime($cred['created_at'])) ?></td>
+                            <td>
+                                <?= $cred['start_date'] ? date('d M Y H:i', strtotime($cred['start_date'])) : '-' ?>
+                            </td>
+                            <td>
+                                <?= $cred['expires_on'] ? date('d M Y H:i', strtotime($cred['expires_on'])) : '-' ?>
+                            </td>
+                        </tr>
+                    <?php endforeach; ?>
+                </tbody>
+            </table>
+        </div>
+    <?php endif; ?>
+</div>
 
 
 <!-- CSS & Countdown -->
@@ -106,89 +174,92 @@
 
 <!-- JS -->
 <script>
-document.addEventListener('DOMContentLoaded', function() {
+    document.addEventListener('DOMContentLoaded', function() {
 
-    // Countdown updater (for subscriptions & recharges)
-    function updateCountdowns() {
-        document.querySelectorAll('.countdown').forEach(function(el) {
-            let expiry = new Date(el.dataset.expiry);
-            let now = new Date();
-            let diff = expiry - now;
+        // Countdown updater (for subscriptions & recharges)
+        function updateCountdowns() {
+            document.querySelectorAll('.countdown').forEach(function(el) {
+                let expiry = new Date(el.dataset.expiry);
+                let now = new Date();
+                let diff = expiry - now;
 
-            if (diff <= 0) {
-                el.textContent = 'Expired';
-                el.closest('tr').classList.add('expired-row'); // highlight row
-            } else {
-                let days = Math.floor(diff / (1000 * 60 * 60 * 24));
-                let hours = Math.floor((diff / (1000 * 60 * 60)) % 24);
-                let mins = Math.floor((diff / (1000 * 60)) % 60);
-                let secs = Math.floor((diff / 1000) % 60);
-                el.textContent = days + 'd ' + hours + 'h ' + mins + 'm ' + secs + 's';
-                el.closest('tr').classList.remove('expired-row'); // remove highlight if not expired
+                if (diff <= 0) {
+                    el.textContent = 'Expired';
+                    el.closest('tr').classList.add('expired-row'); // highlight row
+                } else {
+                    let days = Math.floor(diff / (1000 * 60 * 60 * 24));
+                    let hours = Math.floor((diff / (1000 * 60 * 60)) % 24);
+                    let mins = Math.floor((diff / (1000 * 60)) % 60);
+                    let secs = Math.floor((diff / 1000) % 60);
+                    el.textContent = days + 'd ' + hours + 'h ' + mins + 'm ' + secs + 's';
+                    el.closest('tr').classList.remove('expired-row'); // remove highlight if not expired
+                }
+            });
+        }
+        setInterval(updateCountdowns, 1000);
+        updateCountdowns();
+
+        // AJAX table reload for subscriptions, mpesa, and recharges
+        function loadTable(tableType, page, status) {
+            const url = '<?= base_url("/admin/clients/view/" . $client["id"]) ?>';
+            fetch(`${url}?table=${tableType}&${tableType}_page=${page}&${tableType}_status=${status || ''}`, {
+                    headers: {
+                        'X-Requested-With': 'XMLHttpRequest'
+                    }
+                })
+                .then(res => res.text())
+                .then(html => {
+                    if (tableType === 'subscriptions') {
+                        document.getElementById('subscriptionsTable').innerHTML = html;
+                    } else if (tableType === 'mpesa') {
+                        document.getElementById('mpesaTable').innerHTML = html;
+                    } else if (tableType === 'recharges') {
+                        document.getElementById('rechargesTable').innerHTML = html;
+                    }
+                });
+        }
+
+        // Pagination click handler
+        document.addEventListener('click', function(e) {
+            if (e.target.closest('#subscriptionsPagination a')) {
+                e.preventDefault();
+                const page = e.target.dataset.page;
+                const status = document.getElementById('subscriptionsStatus').value;
+                loadTable('subscriptions', page, status);
+            }
+            if (e.target.closest('#mpesaPagination a')) {
+                e.preventDefault();
+                const page = e.target.dataset.page;
+                const status = document.getElementById('mpesaStatus').value;
+                loadTable('mpesa', page, status);
+            }
+            if (e.target.closest('#rechargesPagination a')) {
+                e.preventDefault();
+                const page = e.target.dataset.page;
+                loadTable('recharges', page, '');
             }
         });
-    }
-    setInterval(updateCountdowns, 1000);
-    updateCountdowns();
 
-    // AJAX table reload for subscriptions, mpesa, and recharges
-    function loadTable(tableType, page, status) {
-        const url = '<?= base_url("/admin/clients/view/" . $client["id"]) ?>';
-        fetch(`${url}?table=${tableType}&${tableType}_page=${page}&${tableType}_status=${status || ''}`, {
-            headers: {
-                'X-Requested-With': 'XMLHttpRequest'
-            }
-        })
-        .then(res => res.text())
-        .then(html => {
-            if (tableType === 'subscriptions') {
-                document.getElementById('subscriptionsTable').innerHTML = html;
-            } else if (tableType === 'mpesa') {
-                document.getElementById('mpesaTable').innerHTML = html;
-            } else if (tableType === 'recharges') {
-                document.getElementById('rechargesTable').innerHTML = html;
-            }
+        // Status filter change handler
+        document.getElementById('subscriptionsStatus').addEventListener('change', function() {
+            loadTable('subscriptions', 1, this.value);
         });
-    }
+        document.getElementById('mpesaStatus').addEventListener('change', function() {
+            loadTable('mpesa', 1, this.value);
+        });
 
-    // Pagination click handler
-    document.addEventListener('click', function(e) {
-        if (e.target.closest('#subscriptionsPagination a')) {
-            e.preventDefault();
-            const page = e.target.dataset.page;
-            const status = document.getElementById('subscriptionsStatus').value;
-            loadTable('subscriptions', page, status);
-        }
-        if (e.target.closest('#mpesaPagination a')) {
-            e.preventDefault();
-            const page = e.target.dataset.page;
-            const status = document.getElementById('mpesaStatus').value;
-            loadTable('mpesa', page, status);
-        }
-        if (e.target.closest('#rechargesPagination a')) {
-            e.preventDefault();
-            const page = e.target.dataset.page;
-            loadTable('recharges', page, '');
-        }
+        // Future-proof hook for copy-to-clipboard / reveal password / regenerate
+        console.log('Activation credentials section loaded');
     });
-
-    // Status filter change handler
-    document.getElementById('subscriptionsStatus').addEventListener('change', function() {
-        loadTable('subscriptions', 1, this.value);
-    });
-    document.getElementById('mpesaStatus').addEventListener('change', function() {
-        loadTable('mpesa', 1, this.value);
-    });
-
-});
 </script>
 
 <style>
-/* Highlight expired rows */
-.expired-row {
-    background-color: #f8d7da !important; /* light red */
-    color: #721c24;
-}
+    /* Highlight expired rows */
+    .expired-row {
+        background-color: #f8d7da !important;
+        /* light red */
+        color: #721c24;
+    }
 </style>
 
 

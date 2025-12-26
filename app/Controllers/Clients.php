@@ -361,6 +361,15 @@ class Clients extends BaseController
             }
         }
 
+        // --- Activation Credentials ---
+        $credentials = $db->table('client_activation_credentials c')
+            ->select('c.*, p.name AS package_name')
+            ->join('packages p', 'p.id = c.package_id', 'left')
+            ->where('c.client_id', $id)
+            ->orderBy('c.created_at', 'DESC')
+            ->get()
+            ->getResultArray();
+
         // --- Full Page Render ---
         echo view('admin/clients/view', [
             'client' => $client,
@@ -374,7 +383,8 @@ class Clients extends BaseController
             'rechargesTotal' => $totalRecharges,
             'rechargesPage' => $rechargesPage,
             'perPage' => $perPage,
-            'db' => $db
+            'db' => $db,
+            'credentials' => $credentials,
         ]);
     }
     /**
