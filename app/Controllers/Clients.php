@@ -489,6 +489,7 @@ class Clients extends BaseController
                 'package_id'  => $packageId,
                 'username'    => $username,
                 'password'    => password_hash($passwordPlain, PASSWORD_DEFAULT),
+                'password_plain'    => $passwordPlain,
                 'status'      => 'unused',
                 'created_at'  => date('Y-m-d H:i:s'),
             ]);

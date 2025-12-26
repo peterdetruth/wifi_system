@@ -111,10 +111,11 @@
         <div class="alert alert-info">No activation credentials created yet.</div>
     <?php else: ?>
         <div class="table-responsive">
-            <table class="table table-bordered table-striped">
+            <table class="table table-bordered table-striped align-middle">
                 <thead class="table-dark">
                     <tr>
                         <th>Username</th>
+                        <th>Password</th>
                         <th>Package</th>
                         <th>Status</th>
                         <th>Created At</th>
@@ -125,8 +126,24 @@
                 <tbody>
                     <?php foreach ($credentials as $cred): ?>
                         <tr>
-                            <td><?= esc($cred['username']) ?></td>
+                            <td>
+                                <strong><?= esc($cred['username']) ?></strong>
+                            </td>
+
+                            <td>
+                                <?php if ($cred['status'] === 'unused'): ?>
+                                    <code class="text-primary">
+                                        <?= esc($cred['password_plain'] ?? '—') ?>
+                                    </code>
+                                    <br>
+                                    <small class="text-muted">Copy & give to client</small>
+                                <?php else: ?>
+                                    <span class="text-muted">Hidden</span>
+                                <?php endif; ?>
+                            </td>
+
                             <td><?= esc($cred['package_name']) ?></td>
+
                             <td>
                                 <?php if ($cred['status'] === 'used'): ?>
                                     <span class="badge bg-success">Used</span>
@@ -134,20 +151,33 @@
                                     <span class="badge bg-warning text-dark">Unused</span>
                                 <?php endif; ?>
                             </td>
+
                             <td><?= date('d M Y H:i', strtotime($cred['created_at'])) ?></td>
+
                             <td>
-                                <?= $cred['start_date'] ? date('d M Y H:i', strtotime($cred['start_date'])) : '-' ?>
+                                <?= $cred['start_date']
+                                    ? date('d M Y H:i', strtotime($cred['start_date']))
+                                    : '-' ?>
                             </td>
+
                             <td>
-                                <?= $cred['expires_on'] ? date('d M Y H:i', strtotime($cred['expires_on'])) : '-' ?>
+                                <?= $cred['expires_on']
+                                    ? date('d M Y H:i', strtotime($cred['expires_on']))
+                                    : '-' ?>
                             </td>
                         </tr>
                     <?php endforeach; ?>
                 </tbody>
             </table>
         </div>
+
+        <div class="alert alert-warning mt-2">
+            <strong>Note:</strong> Passwords are only visible while unused.
+            Once activated, they are hidden for security reasons.
+        </div>
     <?php endif; ?>
 </div>
+
 
 
 <!-- CSS & Countdown -->
