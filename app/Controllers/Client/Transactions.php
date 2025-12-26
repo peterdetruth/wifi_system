@@ -8,8 +8,8 @@ use App\Models\PackageModel;
 
 class Transactions extends BaseController
 {
-    protected MpesaTransactionModel $mpesaTransactionModel;
-    protected PackageModel $packageModel;
+    protected $mpesaTransactionModel;
+    protected $packageModel;
 
     public function __construct()
     {
@@ -27,9 +27,9 @@ class Transactions extends BaseController
             return redirect()->to('/client/login')->with('error', 'Please login');
         }
 
-        $perPage = 10;
-
-        // Allowed sorting fields (VERY IMPORTANT for security)
+        /* -------------------------
+         * Sorting
+         * ------------------------- */
         $allowedSorts = [
             'package' => 'packages.name',
             'amount'  => 'mpesa_transactions.amount',
@@ -37,26 +37,36 @@ class Transactions extends BaseController
             'date'    => 'mpesa_transactions.created_at',
         ];
 
-        // Read query params
         $sort  = $this->request->getGet('sort') ?? 'date';
         $order = strtolower($this->request->getGet('order') ?? 'desc');
 
-        // Validate
-        $sortColumn = $allowedSorts[$sort] ?? $allowedSorts['date'];
+        $sortColumn = $allowedSorts[$sort] ?? 'mpesa_transactions.created_at';
         $order      = in_array($order, ['asc', 'desc']) ? $order : 'desc';
 
-        $transactions = $this->mpesaTransactionModel
+        /* -------------------------
+         * Status Filter
+         * ------------------------- */
+        $statusFilter = strtolower($this->request->getGet('status') ?? '');
+
+        $builder = $this->mpesaTransactionModel
             ->select('mpesa_transactions.*, packages.name AS package_name')
             ->join('packages', 'packages.id = mpesa_transactions.package_id', 'left')
-            ->where('mpesa_transactions.client_id', $clientId)
+            ->where('mpesa_transactions.client_id', $clientId);
+
+        if (in_array($statusFilter, ['success', 'pending', 'failed'])) {
+            $builder->where('mpesa_transactions.status', $statusFilter);
+        }
+
+        $transactions = $builder
             ->orderBy($sortColumn, $order)
-            ->paginate($perPage);
+            ->paginate(10);
 
         return view('client/transactions/index', [
-            'transactions' => $transactions,
-            'pager'        => $this->mpesaTransactionModel->pager,
-            'sort'         => $sort,
-            'order'        => $order,
+            'transactions'  => $transactions,
+            'pager'         => $this->mpesaTransactionModel->pager,
+            'sort'          => $sort,
+            'order'         => $order,
+            'statusFilter'  => $statusFilter,
         ]);
     }
 }

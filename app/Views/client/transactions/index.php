@@ -2,9 +2,6 @@
 <?= $this->section('content') ?>
 
 <?php
-/**
- * Build sortable table header links safely
- */
 function sortLink(string $label, string $column, string $currentSort, string $currentOrder): string
 {
     $order = ($currentSort === $column && $currentOrder === 'asc') ? 'desc' : 'asc';
@@ -33,7 +30,26 @@ function sortLink(string $label, string $column, string $currentSort, string $cu
         </a>
     </div>
 
-    <p class="text-muted">Click a row to view transaction receipt</p>
+    <!-- Status Filter -->
+    <form method="get" class="mb-3">
+        <div class="row g-2 align-items-center">
+            <div class="col-auto">
+                <label class="fw-bold">Status:</label>
+            </div>
+            <div class="col-auto">
+                <select name="status" class="form-select" onchange="this.form.submit()">
+                    <option value="">All</option>
+                    <option value="success" <?= $statusFilter === 'success' ? 'selected' : '' ?>>Success</option>
+                    <option value="pending" <?= $statusFilter === 'pending' ? 'selected' : '' ?>>Pending</option>
+                    <option value="failed" <?= $statusFilter === 'failed'  ? 'selected' : '' ?>>Failed</option>
+                </select>
+            </div>
+
+            <!-- Preserve sorting -->
+            <input type="hidden" name="sort" value="<?= esc($sort) ?>">
+            <input type="hidden" name="order" value="<?= esc($order) ?>">
+        </div>
+    </form>
 
     <?= view('templates/alerts') ?>
 
@@ -56,16 +72,16 @@ function sortLink(string $label, string $column, string $currentSort, string $cu
                         </thead>
                         <tbody>
                             <?php
-                            $startIndex = ($pager->getCurrentPage() - 1) * $pager->getPerPage() + 1;
+                            $start = ($pager->getCurrentPage() - 1) * $pager->getPerPage();
                             ?>
 
                             <?php foreach ($transactions as $i => $tx):
                                 $status = strtolower($tx['status'] ?? '');
 
                                 $rowClass = match ($status) {
-                                    'failed'  => 'table-danger',
-                                    'pending' => 'table-warning',
                                     'success' => 'table-success',
+                                    'pending' => 'table-warning',
+                                    'failed'  => 'table-danger',
                                     default   => 'table-light',
                                 };
 
@@ -74,13 +90,13 @@ function sortLink(string $label, string $column, string $currentSort, string $cu
                                     : '-';
                             ?>
                                 <tr class="<?= $rowClass ?>" data-receipt='<?= esc(json_encode([
-                                                                                'Package' => $tx['package_name'] ?? 'N/A',
-                                                                                'Amount'  => number_format((float)$tx['amount'], 2),
+                                                                                'Package'    => $tx['package_name'] ?? 'N/A',
+                                                                                'Amount'     => number_format((float)$tx['amount'], 2),
                                                                                 'Mpesa Code' => $tx['mpesa_receipt_number'] ?? '-',
-                                                                                'Status'  => ucfirst($status ?: 'unknown'),
-                                                                                'Date'    => $createdAt,
+                                                                                'Status'     => ucfirst($status ?: 'unknown'),
+                                                                                'Date'       => $createdAt,
                                                                             ])) ?>'>
-                                    <td><?= $startIndex + $i ?></td>
+                                    <td><?= $start + $i + 1 ?></td>
                                     <td><?= esc($tx['package_name'] ?? 'N/A') ?></td>
                                     <td><?= number_format((float)$tx['amount'], 2) ?></td>
                                     <td><?= esc($tx['mpesa_receipt_number'] ?? '-') ?></td>
@@ -102,11 +118,11 @@ function sortLink(string $label, string $column, string $currentSort, string $cu
 </div>
 
 <!-- Receipt Modal -->
-<div class="modal fade" id="receiptModal" tabindex="-1" aria-labelledby="receiptLabel" aria-hidden="true">
+<div class="modal fade" id="receiptModal" tabindex="-1">
     <div class="modal-dialog modal-dialog-centered">
         <div class="modal-content">
             <div class="modal-header bg-primary text-white">
-                <h5 class="modal-title" id="receiptLabel">Transaction Receipt</h5>
+                <h5 class="modal-title">Transaction Receipt</h5>
                 <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
             </div>
             <div class="modal-body">
@@ -116,21 +132,9 @@ function sortLink(string $label, string $column, string $currentSort, string $cu
     </div>
 </div>
 
-<style>
-    .table-hover tbody tr:hover {
-        background-color: #f9fafb;
-        cursor: pointer;
-    }
-
-    .badge {
-        font-size: .85rem;
-    }
-</style>
-
 <script>
-    document.addEventListener('DOMContentLoaded', function() {
-        const modalEl = document.getElementById('receiptModal');
-        const modal = new bootstrap.Modal(modalEl);
+    document.addEventListener('DOMContentLoaded', () => {
+        const modal = new bootstrap.Modal(document.getElementById('receiptModal'));
         const content = document.getElementById('receiptContent');
 
         document.querySelectorAll('tbody tr[data-receipt]').forEach(row => {
@@ -138,9 +142,9 @@ function sortLink(string $label, string $column, string $currentSort, string $cu
                 const data = JSON.parse(row.dataset.receipt);
                 let html = '';
 
-                for (const [key, value] of Object.entries(data)) {
-                    html += `<p><strong>${key}:</strong> ${value}</p>`;
-                }
+                Object.entries(data).forEach(([k, v]) => {
+                    html += `<p><strong>${k}:</strong> ${v}</p>`;
+                });
 
                 content.innerHTML = html;
                 modal.show();
