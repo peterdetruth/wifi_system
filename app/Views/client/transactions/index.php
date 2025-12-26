@@ -1,12 +1,39 @@
 <?= $this->extend('layouts/client_layout') ?>
 <?= $this->section('content') ?>
 
+<?php
+/**
+ * Build sortable table header links safely
+ */
+function sortLink(string $label, string $column, string $currentSort, string $currentOrder): string
+{
+    $order = ($currentSort === $column && $currentOrder === 'asc') ? 'desc' : 'asc';
+    $icon  = '';
+
+    if ($currentSort === $column) {
+        $icon = $currentOrder === 'asc' ? ' ▲' : ' ▼';
+    }
+
+    $query = http_build_query(array_merge($_GET, [
+        'sort'  => $column,
+        'order' => $order
+    ]));
+
+    return '<a href="?' . $query . '" class="text-white text-decoration-none">'
+        . esc($label) . $icon .
+        '</a>';
+}
+?>
+
 <div class="container mt-4">
     <div class="d-flex justify-content-between align-items-center mb-3">
         <h3 class="mb-0">My Transactions</h3>
-        <a href="<?= base_url('client/packages') ?>" class="btn btn-outline-primary btn-sm">Browse Packages</a>
+        <a href="<?= base_url('client/packages') ?>" class="btn btn-outline-primary btn-sm">
+            Browse Packages
+        </a>
     </div>
-    <p>Click on a row to open a modal with transaction details</p>
+
+    <p class="text-muted">Click a row to view transaction receipt</p>
 
     <?= view('templates/alerts') ?>
 
@@ -20,102 +47,106 @@
                         <thead class="table-dark">
                             <tr>
                                 <th>#</th>
-                                <th>Package</th>
-                                <th>Amount (KES)</th>
+                                <th><?= sortLink('Package', 'package', $sort, $order) ?></th>
+                                <th><?= sortLink('Amount (KES)', 'amount', $sort, $order) ?></th>
                                 <th>Mpesa Code</th>
-                                <th>Status</th>
-                                <th>Date</th>
+                                <th><?= sortLink('Status', 'status', $sort, $order) ?></th>
+                                <th><?= sortLink('Date', 'date', $sort, $order) ?></th>
                             </tr>
                         </thead>
                         <tbody>
-                            <?php $i = 1; foreach ($transactions as $tx): 
-                                $rowClass = 'table-light';
-                                $status = strtolower($tx['status'] ?? '');
-                                if ($status === 'failed') $rowClass = 'table-danger';
-                                elseif ($status === 'pending') $rowClass = 'table-warning';
-                                elseif ($status === 'success') $rowClass = 'table-success';
-
-                                $createdOn = !empty($tx['created_at']) ? date('d M Y, H:i', strtotime($tx['created_at'])) : '-';
-                                $packageLabel = $tx['package_name'] ?? 'N/A';
+                            <?php
+                            $startIndex = ($pager->getCurrentPage() - 1) * $pager->getPerPage() + 1;
                             ?>
-                                <tr class="<?= $rowClass ?>">
-                                    <td><?= $i++ ?></td>
 
-                                    <td>
-                                        <?php if (!empty($tx['package_id'])): ?>
-                                            <a href="<?= base_url('client/packages/view/' . $tx['package_id']) ?>">
-                                                <?= esc($packageLabel) ?>
-                                            </a>
-                                        <?php else: ?>
-                                            <?= esc($packageLabel) ?>
-                                        <?php endif; ?>
-                                    </td>
+                            <?php foreach ($transactions as $i => $tx):
+                                $status = strtolower($tx['status'] ?? '');
 
-                                    <td><?= esc(number_format((float)($tx['amount'] ?? 0), 2)) ?></td>
+                                $rowClass = match ($status) {
+                                    'failed'  => 'table-danger',
+                                    'pending' => 'table-warning',
+                                    'success' => 'table-success',
+                                    default   => 'table-light',
+                                };
+
+                                $createdAt = !empty($tx['created_at'])
+                                    ? date('d M Y, H:i', strtotime($tx['created_at']))
+                                    : '-';
+                            ?>
+                                <tr class="<?= $rowClass ?>" data-receipt='<?= esc(json_encode([
+                                                                                'Package' => $tx['package_name'] ?? 'N/A',
+                                                                                'Amount'  => number_format((float)$tx['amount'], 2),
+                                                                                'Mpesa Code' => $tx['mpesa_receipt_number'] ?? '-',
+                                                                                'Status'  => ucfirst($status ?: 'unknown'),
+                                                                                'Date'    => $createdAt,
+                                                                            ])) ?>'>
+                                    <td><?= $startIndex + $i ?></td>
+                                    <td><?= esc($tx['package_name'] ?? 'N/A') ?></td>
+                                    <td><?= number_format((float)$tx['amount'], 2) ?></td>
                                     <td><?= esc($tx['mpesa_receipt_number'] ?? '-') ?></td>
-
-                                    <td>
-                                        <?php if ($status === 'success'): ?>
-                                            <span class="badge bg-success">Success</span>
-                                        <?php elseif ($status === 'pending'): ?>
-                                            <span class="badge bg-warning text-dark">Pending</span>
-                                        <?php elseif ($status === 'failed'): ?>
-                                            <span class="badge bg-danger">Failed</span>
-                                        <?php else: ?>
-                                            <span class="badge bg-secondary"><?= esc($status ?: 'unknown') ?></span>
-                                        <?php endif; ?>
-                                    </td>
-
-                                    <td><?= esc($createdOn) ?></td>
+                                    <td><?= ucfirst($status) ?></td>
+                                    <td><?= esc($createdAt) ?></td>
                                 </tr>
                             <?php endforeach; ?>
                         </tbody>
                     </table>
-
-                    <!-- Receipt Modal -->
-                    <div class="modal fade" id="receiptModal" tabindex="-1" aria-labelledby="receiptLabel" aria-hidden="true">
-                      <div class="modal-dialog modal-dialog-centered">
-                        <div class="modal-content">
-                          <div class="modal-header bg-primary text-white">
-                            <h5 class="modal-title" id="receiptLabel">Transaction Receipt</h5>
-                            <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
-                          </div>
-                          <div class="modal-body">
-                            <div id="receiptContent" class="p-2 text-sm"></div>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
                 </div>
             </div>
+        </div>
+
+        <!-- Pagination -->
+        <div class="d-flex justify-content-center mt-4">
+            <?= $pager->links('default', 'bootstrap5') ?>
         </div>
     <?php endif; ?>
 </div>
 
+<!-- Receipt Modal -->
+<div class="modal fade" id="receiptModal" tabindex="-1" aria-labelledby="receiptLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header bg-primary text-white">
+                <h5 class="modal-title" id="receiptLabel">Transaction Receipt</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div id="receiptContent"></div>
+            </div>
+        </div>
+    </div>
+</div>
+
 <style>
-.table-hover tbody tr:hover {
-    background-color: #f9fafb;
-    transition: background 0.2s;
-}
-.badge { font-size: .85rem; padding: .35em .5em; }
+    .table-hover tbody tr:hover {
+        background-color: #f9fafb;
+        cursor: pointer;
+    }
+
+    .badge {
+        font-size: .85rem;
+    }
 </style>
 
 <script>
-document.querySelectorAll('tbody tr').forEach(row => {
-  row.addEventListener('click', () => {
-    const cells = row.querySelectorAll('td');
-    const receipt = `
-      <p><strong>Package:</strong> ${cells[1]?.innerText || '-'}</p>
-      <p><strong>Amount:</strong> ${cells[2]?.innerText || '-'}</p>
-      <p><strong>Mpesa Code:</strong> ${cells[3]?.innerText || '-'}</p>
-      <p><strong>Status:</strong> ${cells[4]?.innerText || '-'}</p>
-      <p><strong>Date:</strong> ${cells[5]?.innerText || '-'}</p>
-    `;
-    document.getElementById('receiptContent').innerHTML = receipt;
-    const modal = new bootstrap.Modal(document.getElementById('receiptModal'));
-    modal.show();
-  });
-});
+    document.addEventListener('DOMContentLoaded', function() {
+        const modalEl = document.getElementById('receiptModal');
+        const modal = new bootstrap.Modal(modalEl);
+        const content = document.getElementById('receiptContent');
+
+        document.querySelectorAll('tbody tr[data-receipt]').forEach(row => {
+            row.addEventListener('click', () => {
+                const data = JSON.parse(row.dataset.receipt);
+                let html = '';
+
+                for (const [key, value] of Object.entries(data)) {
+                    html += `<p><strong>${key}:</strong> ${value}</p>`;
+                }
+
+                content.innerHTML = html;
+                modal.show();
+            });
+        });
+    });
 </script>
 
 <?= $this->endSection() ?>
