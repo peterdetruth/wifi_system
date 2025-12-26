@@ -451,4 +451,72 @@ class Clients extends BaseController
             return redirect()->back()->with('error', 'Error during recharge: ' . $e->getMessage());
         }
     }
+
+    /**
+     * Admin: Create username/password activation for client
+     */
+    public function createActivationCredentials($clientId)
+    {
+        $this->ensureLogin();
+
+        $packageId = $this->request->getPost('package_id');
+
+        if (!$packageId) {
+            return redirect()->back()->with('error', 'Please select a package.');
+        }
+
+        $db = Database::connect();
+
+        // Validate client
+        $client = $this->clientModel->find($clientId);
+        if (!$client) {
+            return redirect()->back()->with('error', 'Client not found.');
+        }
+
+        // Validate package
+        $package = $db->table('packages')->where('id', $packageId)->get()->getRowArray();
+        if (!$package) {
+            return redirect()->back()->with('error', 'Package not found.');
+        }
+
+        // Generate credentials
+        $username = $client['username']; // IMPORTANT: same as client.username
+        $passwordPlain = substr(bin2hex(random_bytes(6)), 0, 10);
+
+        try {
+            $db->table('client_activation_credentials')->insert([
+                'client_id'   => $clientId,
+                'package_id'  => $packageId,
+                'username'    => $username,
+                'password'    => password_hash($passwordPlain, PASSWORD_DEFAULT),
+                'status'      => 'unused',
+                'created_at'  => date('Y-m-d H:i:s'),
+            ]);
+
+            return redirect()->back()->with(
+                'success',
+                "Activation credentials created successfully.<br>
+             <strong>Username:</strong> {$username}<br>
+             <strong>Password:</strong> {$passwordPlain}"
+            );
+        } catch (\Throwable $e) {
+            return redirect()->back()->with(
+                'error',
+                'Failed to create activation credentials: ' . $e->getMessage()
+            );
+        }
+    }
+
+    protected function markActivationUsed(int $activationId, int $subscriptionId): void
+    {
+        $db = Database::connect();
+
+        $db->table('client_activation_credentials')
+            ->where('id', $activationId)
+            ->update([
+                'status'          => 'used',
+                'subscription_id' => $subscriptionId,
+                'used_at'         => date('Y-m-d H:i:s')
+            ]);
+    }
 }

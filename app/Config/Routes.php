@@ -54,6 +54,7 @@ $routes->group('admin', ['filter' => 'auth', 'namespace' => 'App\Controllers'], 
         $routes->get('delete/(:num)', 'Clients::delete/$1');
         // ✅ New route for account recharge (admin only)
         $routes->post('recharge/(:num)', 'Clients::recharge/$1');
+        $routes->post('create-activation/(:num)', 'Clients::createActivationCredentials/$1');
     });
 
     // 🌐 Routers
