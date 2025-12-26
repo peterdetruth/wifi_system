@@ -32,7 +32,7 @@
                         </p>
 
                         <button type="button" class="btn btn-primary toggle-form"
-                                data-package-id="<?= esc($package['id']) ?>">
+                            data-package-id="<?= esc($package['id']) ?>">
                             Pay Now
                         </button>
 
@@ -100,6 +100,35 @@
 
                         <button type="submit" class="btn btn-primary w-100">Reconnect</button>
                         <div id="reconnect-status" class="mt-3 text-center"></div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Connect Using Username & Password -->
+    <div class="row mt-4">
+        <div class="col-md-6 offset-md-3">
+            <div class="card shadow-sm">
+                <div class="card-body">
+                    <h4>Connect Using Username & Password</h4>
+                    <p class="text-muted">
+                        Enter the username and the password provided by the admin to activate your account.
+                    </p>
+
+                    <form id="username-password-connect-form">
+                        <div class="mb-3">
+                            <label class="form-label">Username</label>
+                            <input type="text" class="form-control" name="username" required>
+                        </div>
+
+                        <div class="mb-3">
+                            <label class="form-label">Activation Password</label>
+                            <input type="password" class="form-control" name="password_plain" required>
+                        </div>
+
+                        <button type="submit" class="btn btn-success w-100">Activate</button>
+                        <div id="activation-status" class="mt-3 text-center"></div>
                     </form>
                 </div>
             </div>
