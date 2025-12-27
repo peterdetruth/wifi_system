@@ -32,9 +32,20 @@ class ReadingController extends BaseController
     // Show form to create reading
     public function create()
     {
+        // Load all tarot cards
         $cards = $this->tarotCardModel->findAll();
-        // return view('readings/create', ['cards' => $cards]);
+
+        // Load all users/clients
+        $userModel = new \App\Models\UserModel();
+        $users = $userModel->findAll();
+
+        // Pass both cards and users to the view
+        return view('readings/create', [
+            'cards' => $cards,
+            'users' => $users
+        ]);
     }
+
 
     // Store new reading
     public function store()
