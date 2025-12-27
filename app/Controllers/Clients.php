@@ -509,23 +509,64 @@ class Clients extends BaseController
         }
     }
 
-    // public function activateByUsername()
-    // {
-    //     $username = $this->request->getPost('username');
-    //     $password = $this->request->getPost('password');
+    public function activateByUsername()
+    {
+        // Only allow POST
+        if ($this->request->getMethod() !== 'post') {
+            return $this->response->setJSON([
+                'success' => false,
+                'message' => 'Invalid request method.'
+            ]);
+        }
 
-    //     if (!$username || !$password) {
-    //         return $this->response->setJSON([
-    //             'success' => false,
-    //             'message' => 'Username and password are required.'
-    //         ]);
-    //     }
+        $username = trim((string) $this->request->getPost('username'));
+        $password = trim((string) $this->request->getPost('password'));
 
-    //     // Call ActivationService
-    //     $result = $this->activationService->activateUsingUsername($username, $password);
+        if ($username === '' || $password === '') {
+            return $this->response->setJSON([
+                'success' => false,
+                'message' => 'Username and password are required.'
+            ]);
+        }
 
-    //     return $this->response->setJSON($result);
-    // }
+        try {
+            // IMPORTANT: instantiate service directly
+            $activationService = new \App\Services\ActivationService();
+
+            $result = $activationService->activateUsingUsername(
+                $username,
+                $password
+            );
+
+            // Expected structure from service
+            // [
+            //   success => bool,
+            //   message => string,
+            //   expires_on => string|null
+            // ]
+
+            if ($result['success'] === true) {
+                return $this->response->setJSON([
+                    'success' => true,
+                    'message' => $result['message'],
+                    'expires_on' => $result['expires_on'] ?? null
+                ]);
+            }
+
+            return $this->response->setJSON([
+                'success' => false,
+                'message' => $result['message'] ?? 'Activation failed.'
+            ]);
+        } catch (\Throwable $e) {
+
+            log_message('error', 'activateByUsername error: ' . $e->getMessage());
+
+            return $this->response->setJSON([
+                'success' => false,
+                'message' => 'An unexpected error occurred. Please try again.'
+            ]);
+        }
+    }
 
 
     // Used to mark activation as used (not part of route)
