@@ -187,6 +187,9 @@ $routes->get('readings/create', 'ReadingController::create');
 $routes->post('readings/store', 'ReadingController::store');
 $routes->get('cards/create', 'TarotCardController::create');
 $routes->post('cards/store', 'TarotCardController::store');
+$routes->get('cards/', 'TarotCardController::index');
+$routes->get('cards/edit/(:num)', 'TarotCardController::edit/$1');
+$routes->post('cards/update/(:num)', 'TarotCardController::update/$1');
 
 // ==============================
 // TEST ROUTES
