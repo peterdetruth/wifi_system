@@ -125,12 +125,13 @@ class ActivationService
     public function activateUsingUsername(string $username, string $password): array
     {
         $db = $this->db;
-        $db->transStart();
 
         try {
+            $db->transBegin();
+
             /* -------------------------------
-             * Fetch unused credentials
-             * ------------------------------- */
+         * Fetch unused credentials
+         * ------------------------------- */
             $cred = $db->table('client_activation_credentials')
                 ->where([
                     'username'       => $username,
@@ -141,6 +142,7 @@ class ActivationService
                 ->getRowArray();
 
             if (!$cred) {
+                $db->transRollback();
                 return [
                     'success' => false,
                     'message' => 'Invalid username or password.'
@@ -148,14 +150,15 @@ class ActivationService
             }
 
             /* -------------------------------
-             * Fetch package
-             * ------------------------------- */
+         * Fetch package
+         * ------------------------------- */
             $package = $db->table('packages')
                 ->where('id', $cred['package_id'])
                 ->get()
                 ->getRowArray();
 
             if (!$package) {
+                $db->transRollback();
                 return [
                     'success' => false,
                     'message' => 'Package not found.'
@@ -169,34 +172,46 @@ class ActivationService
             );
 
             /* -------------------------------
-             * Create subscription
-             * ------------------------------- */
-            $db->table('subscriptions')->insert([
+         * Create subscription (FIXED)
+         * ------------------------------- */
+            $insertSub = $db->table('subscriptions')->insert([
                 'client_id'  => $cred['client_id'],
                 'package_id' => $cred['package_id'],
                 'router_id'  => $package['router_id'] ?? null,
                 'status'     => 'active',
                 'start_date' => $now,
-                'expires_on' => $expiresOn,
+                'end_date'   => $expiresOn,   // ✅ REQUIRED
+                'expires_on' => $expiresOn,   // ✅ REQUIRED
                 'created_at' => $now,
                 'updated_at' => $now
             ]);
 
-            /* -------------------------------
-             * Mark credential as used
-             * ------------------------------- */
-            $db->table('client_activation_credentials')
-                ->where('id', $cred['id'])
-                ->update([
-                    'status'     => 'used',
-                    'start_date' => $now,
-                    'expires_on' => $expiresOn,
-                    'updated_at' => $now
-                ]);
+            if (!$insertSub) {
+                throw new \RuntimeException('Subscription insert failed');
+            }
+
+            $subscriptionId = $db->insertID();
 
             /* -------------------------------
-             * Queue router provisioning
-             * ------------------------------- */
+         * Mark credential as used
+         * ------------------------------- */
+            $updateCred = $db->table('client_activation_credentials')
+                ->where('id', $cred['id'])
+                ->update([
+                    'status'          => 'used',
+                    'subscription_id' => $subscriptionId,
+                    'used_at'         => $now,
+                    'start_date'      => $now,
+                    'expires_on'      => $expiresOn
+                ]);
+
+            if (!$updateCred) {
+                throw new \RuntimeException('Credential update failed');
+            }
+
+            /* -------------------------------
+         * Queue router provisioning
+         * ------------------------------- */
             if (!empty($package['router_id'])) {
                 $db->table('router_provisionings')->insert([
                     'client_id'       => $cred['client_id'],
@@ -215,7 +230,7 @@ class ActivationService
             $this->logService->info(
                 'Activation',
                 'Activated using username/password',
-                ['package_id' => $cred['package_id']],
+                ['subscription_id' => $subscriptionId],
                 $cred['client_id']
             );
 
@@ -227,13 +242,11 @@ class ActivationService
         } catch (\Throwable $e) {
             $db->transRollback();
 
-            $this->logger->error('Username activation failed', [
-                'error' => $e->getMessage()
-            ]);
+            log_message('error', 'Username activation failed: ' . $e->getMessage());
 
             return [
                 'success' => false,
-                'message' => 'Activation failed. Please try again.'
+                'message' => 'Activation failed. Please contact support.'
             ];
         }
     }

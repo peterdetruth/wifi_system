@@ -511,13 +511,7 @@ class Clients extends BaseController
 
     public function activateByUsername()
     {
-        // Only allow POST
-        /* if ($this->request->getMethod() !== 'post') {
-            return $this->response->setJSON([
-                'success' => false,
-                'message' => 'Invalid request method.'
-            ]);
-        } */
+        
         if ($this->request->getMethod(true) !== 'POST') {
             return $this->response->setJSON([
                 'success' => false,
