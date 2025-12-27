@@ -8,6 +8,7 @@ use Config\Database;
 
 class Clients extends BaseController
 {
+    protected $activationService;
     protected $clientModel;
     protected $subscriptionModel;
 
@@ -508,7 +509,28 @@ class Clients extends BaseController
         }
     }
 
-    protected function markActivationUsed(int $activationId, int $subscriptionId): void
+    // public function activateByUsername()
+    // {
+    //     $username = $this->request->getPost('username');
+    //     $password = $this->request->getPost('password');
+
+    //     if (!$username || !$password) {
+    //         return $this->response->setJSON([
+    //             'success' => false,
+    //             'message' => 'Username and password are required.'
+    //         ]);
+    //     }
+
+    //     // Call ActivationService
+    //     $result = $this->activationService->activateUsingUsername($username, $password);
+
+    //     return $this->response->setJSON($result);
+    // }
+
+
+    // Used to mark activation as used (not part of route)
+    // Unused
+    public function markActivationUsed(int $activationId, int $subscriptionId = null): void
     {
         $db = Database::connect();
 
@@ -516,7 +538,6 @@ class Clients extends BaseController
             ->where('id', $activationId)
             ->update([
                 'status'          => 'used',
-                'subscription_id' => $subscriptionId,
                 'used_at'         => date('Y-m-d H:i:s')
             ]);
     }

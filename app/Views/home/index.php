@@ -113,7 +113,7 @@
                 <div class="card-body">
                     <h4>Connect Using Username & Password</h4>
                     <p class="text-muted">
-                        Enter the username and the password provided by the admin to activate your account.
+                        Enter the username and password provided by the admin to activate your package.
                     </p>
 
                     <form id="username-password-connect-form">
@@ -123,17 +123,19 @@
                         </div>
 
                         <div class="mb-3">
-                            <label class="form-label">Activation Password</label>
-                            <input type="password" class="form-control" name="password_plain" required>
+                            <label class="form-label">Password</label>
+                            <input type="text" class="form-control" name="password_plain" required>
                         </div>
 
-                        <button type="submit" class="btn btn-success w-100">Activate</button>
+                        <button type="submit" class="btn btn-primary w-100">Activate</button>
+
                         <div id="activation-status" class="mt-3 text-center"></div>
                     </form>
                 </div>
             </div>
         </div>
     </div>
+
 
 </div>
 
