@@ -17,7 +17,7 @@ class LogService
      * Add a log entry
      *
      * @param string $level debug|info|warning|error
-     * @param string $type Payment|Subscription|Login|Voucher|Router
+     * @param string $type Payment|Subscription|Login|Voucher|Router|General
      * @param string $message Human-readable message
      * @param array|null $context Additional details (will be stored as JSON)
      * @param int|null $userId Related user ID
@@ -25,14 +25,27 @@ class LogService
      */
     public function log(string $level, string $type, string $message, ?array $context = null, ?int $userId = null, ?string $ip = null)
     {
+        // Validate level and type
+        $validLevels = ['debug', 'info', 'warning', 'error'];
+        $validTypes  = ['Payment', 'Subscription', 'Login', 'Voucher', 'Router', 'mpesa', 'General'];
+
+        if (!in_array($level, $validLevels)) $level = 'info';
+        if (!in_array($type, $validTypes)) $type = 'General';
+
+        // Ensure context is JSON
+        $jsonContext = $context ? json_encode($context) : json_encode([]);
+
+        // Auto-detect IP if not provided
+        $ipAddress = $ip ?? $_SERVER['REMOTE_ADDR'] ?? 'unknown';
+
         $this->logModel->insert([
-            'level' => $level,
-            'type' => $type,
-            'message' => $message,
-            'context' => $context ? json_encode($context) : null,
-            'user_id' => $userId,
-            'ip_address' => $ip,
-            'created_at' => date('Y-m-d H:i:s'),
+            'level'      => $level,
+            'type'       => $type,
+            'message'    => $message,
+            'context'    => $jsonContext,
+            'user_id'    => $userId,
+            'ip_address' => $ipAddress,
+            'created_at' => $this->now(),
         ]);
     }
 
@@ -55,5 +68,13 @@ class LogService
     public function error(string $type, string $message, ?array $context = null, ?int $userId = null, ?string $ip = null)
     {
         $this->log('error', $type, $message, $context, $userId, $ip);
+    }
+
+    /**
+     * Get current timestamp in Y-m-d H:i:s
+     */
+    protected function now(): string
+    {
+        return date('Y-m-d H:i:s');
     }
 }
