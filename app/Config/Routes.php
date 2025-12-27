@@ -182,8 +182,11 @@ $routes->group('client', ['namespace' => 'App\Controllers\Client'], static funct
 
 $routes->post('reconnect-mpesa', 'Home::reconnectMpesa');
 $routes->post('clients/activateByUsername', 'Clients::activateByUsername');
+
 $routes->get('readings/create', 'ReadingController::create');
 $routes->post('readings/store', 'ReadingController::store');
+$routes->get('cards/create', 'TarotCardController::create');
+$routes->post('cards/store', 'TarotCardController::store');
 
 // ==============================
 // TEST ROUTES
