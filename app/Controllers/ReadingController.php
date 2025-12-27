@@ -74,7 +74,7 @@ class ReadingController extends BaseController
         }
 
         // redirect to show page
-        // return redirect()->to("/readings/{$readingId}");
+        return redirect()->to("/readings/{$readingId}");
     }
 
     // Show reading details
